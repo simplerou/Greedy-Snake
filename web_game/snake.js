@@ -18,9 +18,27 @@ const speedElement =
 document.getElementById("speed");
 
 
-// 点击画布获得键盘焦点
+const mainMenuElement =
+document.getElementById("mainMenu");
 
-canvas.focus();
+
+const gameScreenElement =
+document.getElementById("gameScreen");
+
+
+const currentDifficultyElement =
+document.getElementById("currentDifficulty");
+
+
+const backToMenuElement =
+document.getElementById("backToMenu");
+
+
+const difficultyButtons =
+document.querySelectorAll("[data-difficulty]");
+
+
+// 点击画布获得键盘焦点
 
 canvas.onclick=function(){
 
@@ -38,10 +56,52 @@ const HEIGHT = 800;
 const BLOCK=20;
 
 
+// 蛇头周围预留安全区，避免障碍物堵住开局路线
+const START_SAFE_RADIUS=5;
+
+
+const DIFFICULTIES={
+
+    easy:{
+        startSpeed:220,
+        speedUpEvery:100,
+        speedStep:10,
+        minSpeed:120,
+        obstacleCount:0,
+        obstacleMoveEvery:0,
+        hint:"新手模式：速度较慢，没有障碍物"
+    },
+
+    medium:{
+        startSpeed:150,
+        speedUpEvery:50,
+        speedStep:15,
+        minSpeed:50,
+        obstacleCount:10,
+        obstacleMoveEvery:0,
+        hint:"中等模式：速度较快，有 10 个障碍物"
+    },
+
+    hard:{
+        startSpeed:125,
+        speedUpEvery:40,
+        speedStep:10,
+        minSpeed:45,
+        obstacleCount:15,
+        obstacleMoveEvery:25,
+        hint:"高等模式：速度更快，15 个障碍物每 25 步变换位置"
+    }
+
+};
+
+
+let difficulty="easy";
+
+
 
 // 游戏状态
 
-let state="START";
+let state="MENU";
 
 
 // 蛇
@@ -59,9 +119,12 @@ let food={};
 let obstacles=[];
 
 
-// 方向
+// 当前方向与下一步方向
 
-let direction="STOP";
+let direction="RIGHT";
+
+
+let nextDirection="RIGHT";
 
 
 // 分数
@@ -69,17 +132,50 @@ let direction="STOP";
 let score=0;
 
 
+// 已移动步数与障碍物变换提示
+let moveCount=0;
+
+
+let obstacleMoveNotice=0;
+
+
 // 游戏速度(ms)
 
-let speed = 100;
+let speed = DIFFICULTIES[difficulty].startSpeed;
 
 
 // 最高分
 
-let bestScore =
-Number(
-    localStorage.getItem("bestScore")
-) || 0;
+let bestScore=0;
+
+
+function getBestScore(){
+
+    const storageKey =
+    difficulty==="medium"
+    ? "bestScore"
+    : "bestScore_" + difficulty;
+
+    return Number(
+        localStorage.getItem(storageKey)
+    ) || 0;
+
+}
+
+
+function saveBestScore(){
+
+    const storageKey =
+    difficulty==="medium"
+    ? "bestScore"
+    : "bestScore_" + difficulty;
+
+    localStorage.setItem(
+        storageKey,
+        bestScore
+    );
+
+}
 
 
 // ======================
@@ -87,6 +183,9 @@ Number(
 // ======================
 
 function resetGame(){
+
+
+    const settings=DIFFICULTIES[difficulty];
 
 
     snake=[
@@ -100,13 +199,25 @@ function resetGame(){
     ];
 
 
-    direction="STOP";
+    direction="RIGHT";
+
+
+    nextDirection="RIGHT";
 
 
     score=0;
 
 
-    speed=150;
+    moveCount=0;
+
+
+    obstacleMoveNotice=0;
+
+
+    speed=settings.startSpeed;
+
+
+    bestScore=getBestScore();
 
 
     speedElement.innerHTML = "Speed: 1";
@@ -137,14 +248,19 @@ function resetGame(){
 function updateSpeed(){
 
 
+    const settings=DIFFICULTIES[difficulty];
+
+
     speed =
-    150 - Math.floor(score / 50) * 15;
+    settings.startSpeed
+    - Math.floor(score / settings.speedUpEvery)
+    * settings.speedStep;
 
 
 
-    if(speed < 50){
+    if(speed < settings.minSpeed){
 
-        speed = 50;
+        speed = settings.minSpeed;
 
     }
 
@@ -153,7 +269,10 @@ function updateSpeed(){
     // 计算速度等级
 
     let level =
-    Math.floor((150-speed)/15)+1;
+    Math.floor(
+        (settings.startSpeed-speed)
+        / settings.speedStep
+    )+1;
 
 
 
@@ -226,7 +345,11 @@ function createObstacles(){
     let list=[];
 
 
-    while(list.length<10){
+    const obstacleCount=
+    DIFFICULTIES[difficulty].obstacleCount;
+
+
+    while(list.length<obstacleCount){
 
 
         let o={
@@ -246,7 +369,26 @@ function createObstacles(){
 
 
 
+        const inStartSafeArea =
+            Math.abs(o.x-snake[0].x) <= START_SAFE_RADIUS*BLOCK
+            &&
+            Math.abs(o.y-snake[0].y) <= START_SAFE_RADIUS*BLOCK;
+
+
         if(
+            !snake.some(
+                s =>
+                s.x===o.x &&
+                s.y===o.y
+            )
+            &&
+            !inStartSafeArea
+            &&
+            !(
+                food.x===o.x &&
+                food.y===o.y
+            )
+            &&
             !list.some(
                 item =>
                 item.x===o.x &&
@@ -267,6 +409,63 @@ function createObstacles(){
 }
 
 
+const DIFFICULTY_NAMES={
+    easy:"低等难度 · EASY",
+    medium:"中等难度 · MEDIUM",
+    hard:"高等难度 · HARD"
+};
+
+
+function startGame(selectedDifficulty){
+
+    difficulty=selectedDifficulty;
+
+    currentDifficultyElement.innerHTML =
+    DIFFICULTY_NAMES[difficulty];
+
+    mainMenuElement.hidden=true;
+
+    gameScreenElement.hidden=false;
+
+    resetGame();
+
+    canvas.focus();
+
+}
+
+
+function showMainMenu(){
+
+    state="MENU";
+
+    gameScreenElement.hidden=true;
+
+    mainMenuElement.hidden=false;
+
+    difficultyButtons[0].focus();
+
+}
+
+
+difficultyButtons.forEach(button=>{
+
+    button.addEventListener(
+    "click",
+    function(){
+
+        startGame(button.dataset.difficulty);
+
+    });
+
+});
+
+
+backToMenuElement.addEventListener(
+"click",
+showMainMenu
+);
+
+
 
 // ======================
 // 键盘
@@ -275,6 +474,22 @@ function createObstacles(){
 document.addEventListener(
 "keydown",
 function(e){
+
+
+    if(e.key==="Escape" && !gameScreenElement.hidden){
+
+        showMainMenu();
+
+        return;
+
+    }
+
+
+    if(gameScreenElement.hidden){
+
+        return;
+
+    }
 
 
 
@@ -344,7 +559,7 @@ function(e){
     direction!=="DOWN"){
 
 
-        direction="UP";
+        nextDirection="UP";
 
         state="PLAYING";
 
@@ -359,7 +574,7 @@ function(e){
     ){
 
 
-        direction="DOWN";
+        nextDirection="DOWN";
 
         state="PLAYING";
 
@@ -374,7 +589,7 @@ function(e){
     ){
 
 
-        direction="LEFT";
+        nextDirection="LEFT";
 
         state="PLAYING";
 
@@ -389,7 +604,7 @@ function(e){
     ){
 
 
-        direction="RIGHT";
+        nextDirection="RIGHT";
 
         state="PLAYING";
 
@@ -410,6 +625,16 @@ function update(){
     if(state!=="PLAYING"){
 
         return;
+
+    }
+
+
+    direction=nextDirection;
+
+
+    if(obstacleMoveNotice>0){
+
+        obstacleMoveNotice--;
 
     }
 
@@ -473,10 +698,7 @@ function update(){
             bestScore = score;
 
 
-            localStorage.setItem(
-                "bestScore",
-                bestScore
-            );
+            saveBestScore();
 
 
             bestElement.innerHTML =
@@ -558,6 +780,28 @@ function update(){
 
 
     });
+
+
+    if(state==="PLAYING"){
+
+        moveCount++;
+
+        const moveEvery =
+        DIFFICULTIES[difficulty].obstacleMoveEvery;
+
+        if(
+            moveEvery>0
+            &&
+            moveCount%moveEvery===0
+        ){
+
+            obstacles=createObstacles();
+
+            obstacleMoveNotice=6;
+
+        }
+
+    }
 
 
 }
@@ -656,6 +900,23 @@ function draw(){
 
 
     });
+
+
+    if(obstacleMoveNotice>0){
+
+        ctx.fillStyle="yellow";
+
+        ctx.font="32px Arial";
+
+        ctx.textAlign="center";
+
+        ctx.fillText(
+            "OBSTACLES MOVED!",
+            WIDTH/2,
+            50
+        );
+
+    }
 
 
 
@@ -790,10 +1051,6 @@ function loop(){
 
 
 }
-
-
-
-resetGame();
 
 
 

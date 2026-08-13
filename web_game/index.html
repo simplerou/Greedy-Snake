@@ -1,58 +1,83 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 
 <head>
-
-<meta charset="UTF-8">
-
-<title>Snake Game</title>
-
-<link rel="stylesheet" href="style.css">
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greedy Snake</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-
 
 <body>
 
+<main id="mainMenu">
 
-<h1>🐍 Snake Game</h1>
+    <section class="menuCard" aria-labelledby="gameTitle">
+
+        <p class="eyebrow">CLASSIC ARCADE</p>
+
+        <h1 id="gameTitle">🐍 Greedy Snake</h1>
+
+        <p class="menuSubtitle">选择一个难度，开始你的贪吃蛇挑战</p>
+
+        <div class="difficultyGrid" aria-label="选择游戏难度">
+
+            <button class="difficultyCard easy" data-difficulty="easy" type="button">
+                <span class="difficultyLevel">01</span>
+                <strong>低等难度</strong>
+                <span class="englishName">EASY</span>
+                <span class="difficultyDescription">移动缓慢 · 没有障碍物<br>适合第一次游玩的新手</span>
+                <span class="playLabel">开始游戏 →</span>
+            </button>
+
+            <button class="difficultyCard medium" data-difficulty="medium" type="button">
+                <span class="difficultyLevel">02</span>
+                <strong>中等难度</strong>
+                <span class="englishName">MEDIUM</span>
+                <span class="difficultyDescription">速度适中 · 10 个障碍物<br>经典而均衡的挑战</span>
+                <span class="playLabel">开始游戏 →</span>
+            </button>
+
+            <button class="difficultyCard hard" data-difficulty="hard" type="button">
+                <span class="difficultyLevel">03</span>
+                <strong>高等难度</strong>
+                <span class="englishName">HARD</span>
+                <span class="difficultyDescription">高速移动 · 15 个障碍物<br>障碍物每 25 步改变位置</span>
+                <span class="playLabel">开始游戏 →</span>
+            </button>
+
+        </div>
+
+        <p class="controlsTip">方向键控制移动 · 空格暂停 · R 键重新开始</p>
+
+    </section>
+
+</main>
 
 
-<div id="info">
+<main id="gameScreen" hidden>
 
-    <span id="score">
-        Score: 0
-    </span>
+    <header class="gameHeader">
+        <button id="backToMenu" type="button">← 返回主界面</button>
+        <h1>🐍 Greedy Snake</h1>
+        <span id="currentDifficulty" aria-live="polite"></span>
+    </header>
 
+    <div id="info">
+        <span id="score">Score: 0</span>
+        <span id="best">Best: 0</span>
+        <span id="speed">Speed: 1</span>
+    </div>
 
-    <span id="best">
-        Best: 0
-    </span>
+    <div id="gameBox">
+        <canvas id="game" width="1000" height="800" tabindex="0"></canvas>
+    </div>
 
-
-    <span id="speed">
-        Speed: 1
-    </span>
-
-</div>
-
-
-<div id="gameBox">
-
-<canvas
-id="game"
-width="1000"
-height="800"
-tabindex="0">
-</canvas>
-
-</div>
+</main>
 
 
 <script src="snake.js"></script>
 
-
 </body>
-
 
 </html>

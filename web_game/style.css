@@ -1,76 +1,302 @@
+*{
+    box-sizing:border-box;
+}
+
+
 html,body{
-
     margin:0;
-
-    padding:0;
-
-    overflow:hidden;
-
+    min-height:100%;
 }
 
 
 body{
-
-    background:black;
-
+    background:#050807;
     color:white;
-
-    text-align:center;
-
-    font-family:Arial;
-
+    font-family:Arial, sans-serif;
 }
 
 
-
-h1{
-
-    margin-top:10px;
-
-    margin-bottom:20px;
-
+[hidden]{
+    display:none !important;
 }
 
 
-
-#gameBox{
-
-    width:100vw;
-
+#mainMenu{
+    min-height:100vh;
     display:flex;
-
+    align-items:center;
     justify-content:center;
-
+    padding:32px;
+    background:
+        radial-gradient(circle at 50% 12%, rgba(73,255,135,.15), transparent 35%),
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+        #050807;
+    background-size:auto, 32px 32px, 32px 32px, auto;
 }
 
 
+.menuCard{
+    width:min(1080px, 100%);
+    text-align:center;
+}
 
-canvas{
 
+.eyebrow{
+    margin:0 0 10px;
+    color:#70f59d;
+    font-size:13px;
+    font-weight:bold;
+    letter-spacing:5px;
+}
+
+
+.menuCard h1{
+    margin:0;
+    font-size:clamp(46px, 7vw, 82px);
+    line-height:1.1;
+    text-shadow:0 0 30px rgba(66,255,128,.2);
+}
+
+
+.menuSubtitle{
+    margin:15px 0 35px;
+    color:#a7b2aa;
+    font-size:18px;
+}
+
+
+.difficultyGrid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:18px;
+}
+
+
+.difficultyCard{
+    position:relative;
+    min-height:285px;
+    padding:28px;
+    overflow:hidden;
+    border:1px solid #2d3831;
+    border-radius:14px;
+    background:linear-gradient(145deg, #121814, #090d0b);
+    color:white;
+    text-align:left;
+    cursor:pointer;
+    transition:transform .2s, border-color .2s, box-shadow .2s;
+}
+
+
+.difficultyCard:hover,
+.difficultyCard:focus-visible{
+    transform:translateY(-6px);
+    outline:none;
+}
+
+
+.difficultyCard.easy:hover,
+.difficultyCard.easy:focus-visible{
+    border-color:#62ef96;
+    box-shadow:0 16px 45px rgba(70,236,125,.14);
+}
+
+
+.difficultyCard.medium:hover,
+.difficultyCard.medium:focus-visible{
+    border-color:#f2c94c;
+    box-shadow:0 16px 45px rgba(242,201,76,.14);
+}
+
+
+.difficultyCard.hard:hover,
+.difficultyCard.hard:focus-visible{
+    border-color:#ff6262;
+    box-shadow:0 16px 45px rgba(255,75,75,.14);
+}
+
+
+.difficultyLevel{
+    position:absolute;
+    top:18px;
+    right:22px;
+    color:#29332c;
+    font-size:58px;
+    font-weight:bold;
+}
+
+
+.difficultyCard strong,
+.englishName,
+.difficultyDescription,
+.playLabel{
+    position:relative;
+    z-index:1;
+    display:block;
+}
+
+
+.difficultyCard strong{
+    margin-top:34px;
+    font-size:28px;
+}
+
+
+.englishName{
+    margin-top:6px;
+    color:#78857c;
+    font-size:12px;
+    font-weight:bold;
+    letter-spacing:3px;
+}
+
+
+.difficultyDescription{
+    margin-top:32px;
+    color:#a9b4ac;
+    font-size:15px;
+    line-height:1.8;
+}
+
+
+.playLabel{
+    margin-top:25px;
+    color:#72f49d;
+    font-size:14px;
+    font-weight:bold;
+}
+
+
+.medium .playLabel{
+    color:#f2c94c;
+}
+
+
+.hard .playLabel{
+    color:#ff7070;
+}
+
+
+.controlsTip{
+    margin:30px 0 0;
+    color:#68736b;
+    font-size:14px;
+}
+
+
+#gameScreen{
+    min-height:100vh;
+    overflow:hidden;
     background:black;
-
-    border:3px solid white;
-
-    max-width:95vw;
-
-    max-height:85vh;
-
+    text-align:center;
 }
 
+
+.gameHeader{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:62px;
+    padding:8px 22px;
+}
+
+
+.gameHeader h1{
+    margin:0;
+    font-size:30px;
+}
+
+
+#backToMenu{
+    position:absolute;
+    left:22px;
+    padding:9px 14px;
+    border:1px solid #526058;
+    border-radius:6px;
+    background:#101512;
+    color:white;
+    cursor:pointer;
+}
+
+
+#backToMenu:hover,
+#backToMenu:focus-visible{
+    border-color:#70f59d;
+    outline:none;
+}
+
+
+#currentDifficulty{
+    position:absolute;
+    right:22px;
+    color:#70f59d;
+    font-size:14px;
+    font-weight:bold;
+}
 
 
 #info{
-
     width:100%;
-
     display:flex;
-
     justify-content:center;
-
     gap:80px;
-
-    font-size:30px;
-
     margin-bottom:10px;
+    font-size:25px;
+}
 
+
+#gameBox{
+    width:100vw;
+    display:flex;
+    justify-content:center;
+}
+
+
+canvas{
+    max-width:95vw;
+    max-height:84vh;
+    border:3px solid white;
+    background:black;
+}
+
+
+@media (max-width:800px){
+    #mainMenu{
+        align-items:flex-start;
+        padding:25px 18px;
+    }
+
+    .difficultyGrid{
+        grid-template-columns:1fr;
+    }
+
+    .difficultyCard{
+        min-height:210px;
+    }
+
+    .difficultyCard strong{
+        margin-top:15px;
+    }
+
+    .difficultyDescription{
+        margin-top:18px;
+    }
+
+    .gameHeader{
+        justify-content:flex-end;
+    }
+
+    .gameHeader h1{
+        display:none;
+    }
+
+    #info{
+        gap:20px;
+        font-size:18px;
+    }
+
+    canvas{
+        max-height:80vh;
+    }
 }
