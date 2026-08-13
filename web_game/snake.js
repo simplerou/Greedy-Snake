@@ -72,6 +72,9 @@ const BLOCK=20;
 const START_SAFE_RADIUS=5;
 
 
+const COUNTDOWN_DURATION=4000;
+
+
 const DIFFICULTIES={
 
     easy:{
@@ -114,6 +117,9 @@ let difficulty="easy";
 // 游戏状态
 
 let state="MENU";
+
+
+let countdownStartTime=0;
 
 
 // 蛇
@@ -250,7 +256,10 @@ function resetGame(){
     food=createFood();
 
 
-    state="START";
+    countdownStartTime=Date.now();
+
+
+    state="COUNTDOWN";
 
 }
 
@@ -500,12 +509,6 @@ function changeDirection(newDirection){
 
         nextDirection=newDirection;
 
-        if(state==="START"){
-
-            state="PLAYING";
-
-        }
-
     }
 
 }
@@ -713,6 +716,23 @@ function(e){
 // ======================
 
 function update(){
+
+
+    if(state==="COUNTDOWN"){
+
+        if(Date.now()-countdownStartTime>=COUNTDOWN_DURATION){
+
+            state="PLAYING";
+
+        }
+
+        else{
+
+            return;
+
+        }
+
+    }
 
 
     if(state!=="PLAYING"){
@@ -1040,13 +1060,47 @@ function draw(){
 
 
 
-    // 开始
+    // 开始倒计时
 
 
-    if(state==="START"){
+    if(state==="COUNTDOWN"){
 
 
-        ctx.font="40px Arial";
+        const elapsed=Date.now()-countdownStartTime;
+
+
+        let countdownText="3";
+
+
+        if(elapsed>=3000){
+
+            countdownText="GO!";
+
+        }
+
+        else if(elapsed>=2000){
+
+            countdownText="1";
+
+        }
+
+        else if(elapsed>=1000){
+
+            countdownText="2";
+
+        }
+
+
+        ctx.fillStyle="rgba(0,0,0,.55)";
+
+
+        ctx.fillRect(0,0,WIDTH,HEIGHT);
+
+
+        ctx.fillStyle="white";
+
+
+        ctx.font="bold 110px Arial";
 
 
         ctx.textAlign="center";
@@ -1054,13 +1108,30 @@ function draw(){
 
         ctx.fillText(
 
-            window.matchMedia("(max-width: 800px)").matches
-            ? "Swipe Or Tap A Direction"
-            : "Press Arrow Key To Start",
+            countdownText,
 
             WIDTH/2,
 
             HEIGHT/2
+
+        );
+
+
+        ctx.font="26px Arial";
+
+
+        ctx.fillStyle="#a7b2aa";
+
+
+        ctx.fillText(
+
+            window.matchMedia("(max-width: 800px)").matches
+            ? "滑动或点击方向键选择起步方向"
+            : "按方向键选择起步方向",
+
+            WIDTH/2,
+
+            HEIGHT/2+70
 
         );
 
