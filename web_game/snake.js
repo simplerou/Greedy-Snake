@@ -38,6 +38,18 @@ const difficultyButtons =
 document.querySelectorAll("[data-difficulty]");
 
 
+const directionButtons =
+document.querySelectorAll("[data-direction]");
+
+
+const touchPauseElement =
+document.getElementById("touchPause");
+
+
+const touchRestartElement =
+document.getElementById("touchRestart");
+
+
 // 点击画布获得键盘焦点
 
 canvas.onclick=function(){
@@ -227,6 +239,9 @@ function resetGame(){
 
 
     bestElement.innerHTML = "Best: " + bestScore;
+
+
+    touchPauseElement.innerHTML="暂停";
 
 
     obstacles=createObstacles();
@@ -466,6 +481,142 @@ showMainMenu
 );
 
 
+function changeDirection(newDirection){
+
+    if(gameScreenElement.hidden){
+
+        return;
+
+    }
+
+    const oppositeDirections={
+        UP:"DOWN",
+        DOWN:"UP",
+        LEFT:"RIGHT",
+        RIGHT:"LEFT"
+    };
+
+    if(newDirection!==oppositeDirections[direction]){
+
+        nextDirection=newDirection;
+
+        if(state==="START"){
+
+            state="PLAYING";
+
+        }
+
+    }
+
+}
+
+
+function togglePause(){
+
+    if(state==="PLAYING"){
+
+        state="PAUSE";
+
+        touchPauseElement.innerHTML="继续";
+
+    }
+
+    else if(state==="PAUSE"){
+
+        state="PLAYING";
+
+        touchPauseElement.innerHTML="暂停";
+
+    }
+
+}
+
+
+directionButtons.forEach(button=>{
+
+    button.addEventListener(
+    "pointerdown",
+    function(e){
+
+        e.preventDefault();
+
+        changeDirection(button.dataset.direction);
+
+    });
+
+});
+
+
+touchPauseElement.addEventListener(
+"click",
+togglePause
+);
+
+
+touchRestartElement.addEventListener(
+"click",
+function(){
+
+    resetGame();
+
+    touchPauseElement.innerHTML="暂停";
+
+}
+);
+
+
+let touchStartX=0;
+
+
+let touchStartY=0;
+
+
+canvas.addEventListener(
+"touchstart",
+function(e){
+
+    touchStartX=e.touches[0].clientX;
+
+    touchStartY=e.touches[0].clientY;
+
+},
+{passive:true}
+);
+
+
+canvas.addEventListener(
+"touchend",
+function(e){
+
+    const deltaX=
+    e.changedTouches[0].clientX-touchStartX;
+
+    const deltaY=
+    e.changedTouches[0].clientY-touchStartY;
+
+    if(Math.max(Math.abs(deltaX),Math.abs(deltaY))<20){
+
+        return;
+
+    }
+
+    if(Math.abs(deltaX)>Math.abs(deltaY)){
+
+        changeDirection(deltaX>0 ? "RIGHT" : "LEFT");
+
+    }
+
+    else{
+
+        changeDirection(deltaY>0 ? "DOWN" : "UP");
+
+    }
+
+},
+{passive:true}
+);
+
+
 
 // ======================
 // 键盘
@@ -513,17 +664,7 @@ function(e){
     if(e.code==="Space"){
 
 
-        if(state==="PLAYING"){
-
-            state="PAUSE";
-
-        }
-
-        else if(state==="PAUSE"){
-
-            state="PLAYING";
-
-        }
+        togglePause();
 
 
         return;
@@ -554,61 +695,13 @@ function(e){
 
 
 
-    if(e.key==="ArrowUp"
-    &&
-    direction!=="DOWN"){
+    if(e.key==="ArrowUp") changeDirection("UP");
 
+    else if(e.key==="ArrowDown") changeDirection("DOWN");
 
-        nextDirection="UP";
+    else if(e.key==="ArrowLeft") changeDirection("LEFT");
 
-        state="PLAYING";
-
-    }
-
-
-
-    else if(
-        e.key==="ArrowDown"
-        &&
-        direction!=="UP"
-    ){
-
-
-        nextDirection="DOWN";
-
-        state="PLAYING";
-
-    }
-
-
-
-    else if(
-        e.key==="ArrowLeft"
-        &&
-        direction!=="RIGHT"
-    ){
-
-
-        nextDirection="LEFT";
-
-        state="PLAYING";
-
-    }
-
-
-
-    else if(
-        e.key==="ArrowRight"
-        &&
-        direction!=="LEFT"
-    ){
-
-
-        nextDirection="RIGHT";
-
-        state="PLAYING";
-
-    }
+    else if(e.key==="ArrowRight") changeDirection("RIGHT");
 
 
 });
@@ -961,7 +1054,9 @@ function draw(){
 
         ctx.fillText(
 
-            "Press Arrow Key To Start",
+            window.matchMedia("(max-width: 800px)").matches
+            ? "Swipe Or Tap A Direction"
+            : "Press Arrow Key To Start",
 
             WIDTH/2,
 
@@ -1021,7 +1116,9 @@ function draw(){
 
         ctx.fillText(
 
-            "Press R To Restart",
+            window.matchMedia("(max-width: 800px)").matches
+            ? "Tap Restart Below"
+            : "Press R To Restart",
 
             WIDTH/2,
 

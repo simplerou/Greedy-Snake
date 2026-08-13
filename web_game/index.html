@@ -48,7 +48,8 @@
 
         </div>
 
-        <p class="controlsTip">方向键控制移动 · 空格暂停 · R 键重新开始</p>
+        <p class="controlsTip desktopTip">方向键控制移动 · 空格暂停 · R 键重新开始</p>
+        <p class="controlsTip mobileTip">滑动画布或点击方向键移动 · 点击暂停键暂停</p>
 
     </section>
 
@@ -72,6 +73,17 @@
     <div id="gameBox">
         <canvas id="game" width="1000" height="800" tabindex="0"></canvas>
     </div>
+
+    <section id="touchControls" aria-label="手机游戏控制">
+
+        <button class="directionButton up" data-direction="UP" type="button" aria-label="向上">▲</button>
+        <button class="directionButton left" data-direction="LEFT" type="button" aria-label="向左">◀</button>
+        <button id="touchPause" type="button" aria-label="暂停或继续">暂停</button>
+        <button class="directionButton right" data-direction="RIGHT" type="button" aria-label="向右">▶</button>
+        <button class="directionButton down" data-direction="DOWN" type="button" aria-label="向下">▼</button>
+        <button id="touchRestart" type="button">重新开始</button>
+
+    </section>
 
 </main>
 

@@ -184,6 +184,12 @@ body{
 }
 
 
+.mobileTip,
+#touchControls{
+    display:none;
+}
+
+
 #gameScreen{
     min-height:100vh;
     overflow:hidden;
@@ -258,10 +264,15 @@ canvas{
     max-height:84vh;
     border:3px solid white;
     background:black;
+    touch-action:none;
 }
 
 
 @media (max-width:800px){
+    body{
+        overscroll-behavior:none;
+    }
+
     #mainMenu{
         align-items:flex-start;
         padding:25px 18px;
@@ -297,6 +308,77 @@ canvas{
     }
 
     canvas{
-        max-height:80vh;
+        width:min(95vw, 500px);
+        height:auto;
+        max-height:58vh;
+    }
+
+    .desktopTip{
+        display:none;
+    }
+
+    .mobileTip{
+        display:block;
+    }
+
+    #touchControls{
+        width:238px;
+        margin:12px auto 18px;
+        display:grid;
+        grid-template-columns:repeat(3, 68px);
+        grid-template-rows:repeat(3, 54px);
+        justify-content:center;
+        gap:7px;
+        user-select:none;
+    }
+
+    #touchControls button{
+        border:1px solid #536158;
+        border-radius:12px;
+        background:linear-gradient(145deg, #172019, #0c110e);
+        color:white;
+        font-size:22px;
+        font-weight:bold;
+        touch-action:manipulation;
+        -webkit-tap-highlight-color:transparent;
+    }
+
+    #touchControls button:active{
+        transform:scale(.94);
+        border-color:#70f59d;
+        background:#1c3424;
+    }
+
+    .directionButton.up{
+        grid-column:2;
+        grid-row:1;
+    }
+
+    .directionButton.left{
+        grid-column:1;
+        grid-row:2;
+    }
+
+    #touchPause{
+        grid-column:2;
+        grid-row:2;
+        color:#70f59d !important;
+        font-size:14px !important;
+    }
+
+    .directionButton.right{
+        grid-column:3;
+        grid-row:2;
+    }
+
+    .directionButton.down{
+        grid-column:2;
+        grid-row:3;
+    }
+
+    #touchRestart{
+        grid-column:3;
+        grid-row:3;
+        font-size:12px !important;
     }
 }
