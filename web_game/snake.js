@@ -4,6 +4,7 @@ const ctx = canvas.getContext("2d");
 const scoreElement = document.querySelector("#score strong");
 const bestElement = document.querySelector("#best strong");
 const speedElement = document.querySelector("#speed strong");
+const timerElement = document.querySelector("#timer strong");
 const mainMenuElement = document.getElementById("mainMenu");
 const gameScreenElement = document.getElementById("gameScreen");
 const currentDifficultyElement = document.getElementById("currentDifficulty");
@@ -18,6 +19,13 @@ const viewLeaderboardElement = document.getElementById("viewLeaderboard");
 const resultToMenuElement = document.getElementById("resultToMenu");
 const touchPauseElement = document.getElementById("touchPause");
 const touchRestartElement = document.getElementById("touchRestart");
+
+// 统计面板元素
+const statTimeElement = document.getElementById("statTime");
+const statFoodElement = document.getElementById("statFood");
+const statMovesElement = document.getElementById("statMoves");
+const statSpeedElement = document.getElementById("statSpeed");
+const statMaxSpeedElement = document.getElementById("statMaxSpeed");
 
 const difficultyButtons = document.querySelectorAll("[data-difficulty]");
 const directionButtons = document.querySelectorAll("[data-direction]");
@@ -72,6 +80,7 @@ let difficulty = "easy";
 let leaderboardDifficulty = "easy";
 let state = "MENU";
 let countdownStartTime = 0;
+let gameStartTime = 0;
 let snake = [];
 let food = {};
 let obstacles = [];
@@ -79,11 +88,14 @@ let direction = "RIGHT";
 let nextDirection = "RIGHT";
 let score = 0;
 let moveCount = 0;
+let foodEaten = 0;
+let maxSpeedLevel = 1;
 let obstacleMoveNotice = 0;
 let speed = DIFFICULTIES[difficulty].startSpeed;
 let bestScore = 0;
 let currentPlayerName = "匿名玩家";
 let leaderboards = loadLeaderboards();
+let timerInterval = null;
 
 function createEmptyLeaderboards() {
     return { easy: [], medium: [], hard: [] };
@@ -271,6 +283,8 @@ function resetGame() {
     nextDirection = "RIGHT";
     score = 0;
     moveCount = 0;
+    foodEaten = 0;
+    maxSpeedLevel = 1;
     obstacleMoveNotice = 0;
     speed = settings.startSpeed;
     bestScore = getBestScore(difficulty);
@@ -278,8 +292,15 @@ function resetGame() {
     scoreElement.textContent = "0";
     bestElement.textContent = String(bestScore);
     speedElement.textContent = "1";
+    timerElement.textContent = "00:00";
     touchPauseElement.textContent = "暂停";
     resultOverlayElement.hidden = true;
+
+    // 清除之前的计时器
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
 
     food = {};
     obstacles = createObstacles();
@@ -297,6 +318,7 @@ function updateSpeed() {
 
     const level = Math.floor((settings.startSpeed - speed) / settings.speedStep) + 1;
     speedElement.textContent = String(level);
+    maxSpeedLevel = Math.max(maxSpeedLevel, level);
 }
 
 function createFood() {
@@ -370,6 +392,15 @@ function finishGame() {
     if (state === "GAMEOVER") return;
 
     state = "GAMEOVER";
+    stopTimer();
+
+    // 更新最终计时
+    const duration = getGameDuration();
+    timerElement.textContent = formatTime(duration);
+
+    // 更新统计面板
+    updateStatsPanel();
+
     const result = recordScore();
     resultScoreElement.textContent = String(score);
 
@@ -404,11 +435,55 @@ function changeDirection(newDirection) {
 function togglePause() {
     if (state === "PLAYING") {
         state = "PAUSE";
+        stopTimer();
         touchPauseElement.textContent = "继续";
     } else if (state === "PAUSE") {
         state = "PLAYING";
+        startTimer();
         touchPauseElement.textContent = "暂停";
     }
+}
+
+/* ── 计时器 & 统计 ─────────────────────────────── */
+
+function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function startTimer() {
+    stopTimer(); // 先清除旧的，防止重复
+    timerInterval = setInterval(() => {
+        if (state !== "PLAYING") return;
+        const elapsed = Date.now() - gameStartTime;
+        timerElement.textContent = formatTime(elapsed);
+    }, 200);
+}
+
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
+function getGameDuration() {
+    return Date.now() - gameStartTime;
+}
+
+function updateStatsPanel() {
+    const duration = getGameDuration();
+    statTimeElement.textContent = formatTime(duration);
+    statFoodElement.textContent = String(foodEaten);
+    statMovesElement.textContent = String(moveCount);
+    statSpeedElement.textContent = String(maxSpeedLevel);
+
+    const avgSpeed = moveCount > 0
+        ? (duration / 1000 / moveCount).toFixed(2)
+        : "0.00";
+    statMaxSpeedElement.textContent = `${avgSpeed}s`;
 }
 
 difficultyButtons.forEach(button => {
@@ -507,6 +582,8 @@ function update() {
     if (state === "COUNTDOWN") {
         if (Date.now() - countdownStartTime >= COUNTDOWN_DURATION) {
             state = "PLAYING";
+            gameStartTime = Date.now();
+            startTimer();
         } else {
             return;
         }
@@ -526,6 +603,7 @@ function update() {
 
     if (head.x === food.x && head.y === food.y) {
         score += 10;
+        foodEaten += 1;
         scoreElement.textContent = String(score);
         updateSpeed();
 

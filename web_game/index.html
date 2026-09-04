@@ -108,6 +108,7 @@
         <span id="score"><small>SCORE</small><strong>0</strong></span>
         <span id="best"><small>BEST</small><strong>0</strong></span>
         <span id="speed"><small>SPEED</small><strong>1</strong></span>
+        <span id="timer"><small>TIME</small><strong>00:00</strong></span>
     </div>
 
     <div id="gameBox">
@@ -132,6 +133,36 @@
                 <strong id="resultScore">0</strong>
             </div>
             <p id="resultRank" class="resultRank"></p>
+
+            <div class="statsPanel">
+                <div class="statsHeading">
+                    <span class="sectionIndex">✦</span>
+                    <span>本局统计</span>
+                </div>
+                <div class="statsGrid">
+                    <div class="statItem">
+                        <span class="statLabel">⏱ 存活时间</span>
+                        <span class="statValue" id="statTime">00:00</span>
+                    </div>
+                    <div class="statItem">
+                        <span class="statLabel">🍎 食物数量</span>
+                        <span class="statValue" id="statFood">0</span>
+                    </div>
+                    <div class="statItem">
+                        <span class="statLabel">👣 移动步数</span>
+                        <span class="statValue" id="statMoves">0</span>
+                    </div>
+                    <div class="statItem">
+                        <span class="statLabel">⚡ 最高速度</span>
+                        <span class="statValue" id="statSpeed">1</span>
+                    </div>
+                    <div class="statItem">
+                        <span class="statLabel">🐢 平均步速</span>
+                        <span class="statValue" id="statMaxSpeed">0.00s</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="resultActions">
                 <button id="playAgain" class="primaryAction" type="button">再来一局</button>
                 <button id="viewLeaderboard" type="button">查看榜单</button>

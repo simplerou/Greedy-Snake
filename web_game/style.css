@@ -555,6 +555,95 @@ kbd{
     font-size:21px;
 }
 
+#timer small{
+    color:#b5c0b8;
+}
+
+#timer strong{
+    color:#b5c0b8;
+}
+
+.statsPanel{
+    margin:18px 0;
+    padding:18px;
+    border:1px solid var(--line);
+    background:rgba(9,14,11,.85);
+    text-align:left;
+}
+
+.statsHeading{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:14px;
+    padding-bottom:10px;
+    border-bottom:1px solid var(--line);
+    color:var(--muted);
+    font-size:11px;
+    font-weight:800;
+    letter-spacing:1.5px;
+}
+
+.statsHeading .sectionIndex{
+    color:var(--green);
+    font-size:10px;
+}
+
+.statsGrid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:12px;
+}
+
+.statItem{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:10px 12px;
+    background:rgba(255,255,255,.025);
+    border:1px solid rgba(255,255,255,.04);
+}
+
+.statLabel{
+    color:var(--dim);
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:.5px;
+}
+
+.statValue{
+    color:var(--text);
+    font-family:Consolas, monospace;
+    font-size:18px;
+    font-weight:800;
+}
+
+.statsGrid .statItem:nth-child(1) .statValue{
+    color:var(--green);
+}
+
+.statsGrid .statItem:nth-child(2) .statValue{
+    color:var(--red);
+}
+
+.statsGrid .statItem:nth-child(3) .statValue{
+    color:var(--yellow);
+}
+
+.statsGrid .statItem:nth-child(4) .statValue{
+    color:#6ec6ff;
+}
+
+.statsGrid .statItem:nth-child(5) .statValue{
+    color:#b5c0b8;
+}
+
+@media (max-width:420px){
+    .statsGrid{
+        grid-template-columns:1fr;
+    }
+}
+
 #gameBox{
     width:100vw;
     display:flex;
