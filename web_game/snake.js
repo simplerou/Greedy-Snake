@@ -1,1242 +1,655 @@
-const canvas =
-document.getElementById("game");
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
+const scoreElement = document.querySelector("#score strong");
+const bestElement = document.querySelector("#best strong");
+const speedElement = document.querySelector("#speed strong");
+const mainMenuElement = document.getElementById("mainMenu");
+const gameScreenElement = document.getElementById("gameScreen");
+const currentDifficultyElement = document.getElementById("currentDifficulty");
+const backToMenuElement = document.getElementById("backToMenu");
+const playerNameElement = document.getElementById("playerName");
+const leaderboardListElement = document.getElementById("leaderboardList");
+const resultOverlayElement = document.getElementById("resultOverlay");
+const resultScoreElement = document.getElementById("resultScore");
+const resultRankElement = document.getElementById("resultRank");
+const playAgainElement = document.getElementById("playAgain");
+const viewLeaderboardElement = document.getElementById("viewLeaderboard");
+const resultToMenuElement = document.getElementById("resultToMenu");
+const touchPauseElement = document.getElementById("touchPause");
+const touchRestartElement = document.getElementById("touchRestart");
 
-const ctx =
-canvas.getContext("2d");
-
-
-const scoreElement =
-document.getElementById("score");
-
-
-const bestElement =
-document.getElementById("best");
-
-
-const speedElement =
-document.getElementById("speed");
-
-
-const mainMenuElement =
-document.getElementById("mainMenu");
-
-
-const gameScreenElement =
-document.getElementById("gameScreen");
-
-
-const currentDifficultyElement =
-document.getElementById("currentDifficulty");
-
-
-const backToMenuElement =
-document.getElementById("backToMenu");
-
-
-const difficultyButtons =
-document.querySelectorAll("[data-difficulty]");
-
-
-const directionButtons =
-document.querySelectorAll("[data-direction]");
-
-
-const touchPauseElement =
-document.getElementById("touchPause");
-
-
-const touchRestartElement =
-document.getElementById("touchRestart");
-
-
-// 点击画布获得键盘焦点
-
-canvas.onclick=function(){
-
-    canvas.focus();
-
-};
-
-
+const difficultyButtons = document.querySelectorAll("[data-difficulty]");
+const directionButtons = document.querySelectorAll("[data-direction]");
+const leaderboardTabs = document.querySelectorAll("[data-leaderboard-difficulty]");
 
 const WIDTH = 1000;
-
 const HEIGHT = 800;
+const BLOCK = 20;
+const START_SAFE_RADIUS = 5;
+const COUNTDOWN_DURATION = 4000;
+const LEADERBOARD_KEY = "greedySnakeLeaderboardV1";
+const PLAYER_NAME_KEY = "greedySnakePlayerName";
+const MAX_LEADERBOARD_SIZE = 10;
 
-
-const BLOCK=20;
-
-
-// 蛇头周围预留安全区，避免障碍物堵住开局路线
-const START_SAFE_RADIUS=5;
-
-
-const COUNTDOWN_DURATION=4000;
-
-
-const DIFFICULTIES={
-
-    easy:{
-        startSpeed:220,
-        speedUpEvery:100,
-        speedStep:10,
-        minSpeed:120,
-        obstacleCount:0,
-        obstacleMoveEvery:0,
-        hint:"新手模式：速度较慢，没有障碍物"
+const DIFFICULTIES = {
+    easy: {
+        name: "低等难度",
+        englishName: "EASY",
+        color: "#69f49a",
+        startSpeed: 220,
+        speedUpEvery: 100,
+        speedStep: 10,
+        minSpeed: 120,
+        obstacleCount: 0,
+        obstacleMoveEvery: 0
     },
-
-    medium:{
-        startSpeed:150,
-        speedUpEvery:50,
-        speedStep:15,
-        minSpeed:50,
-        obstacleCount:10,
-        obstacleMoveEvery:0,
-        hint:"中等模式：速度较快，有 10 个障碍物"
+    medium: {
+        name: "中等难度",
+        englishName: "MEDIUM",
+        color: "#f2c94c",
+        startSpeed: 150,
+        speedUpEvery: 50,
+        speedStep: 15,
+        minSpeed: 50,
+        obstacleCount: 10,
+        obstacleMoveEvery: 0
     },
-
-    hard:{
-        startSpeed:125,
-        speedUpEvery:40,
-        speedStep:10,
-        minSpeed:45,
-        obstacleCount:15,
-        obstacleMoveEvery:25,
-        hint:"高等模式：速度更快，15 个障碍物每 25 步变换位置"
+    hard: {
+        name: "高等难度",
+        englishName: "HARD",
+        color: "#ff6969",
+        startSpeed: 125,
+        speedUpEvery: 40,
+        speedStep: 10,
+        minSpeed: 45,
+        obstacleCount: 15,
+        obstacleMoveEvery: 25
     }
-
 };
 
-
-let difficulty="easy";
-
-
-
-// 游戏状态
-
-let state="MENU";
-
-
-let countdownStartTime=0;
-
-
-// 蛇
-
-let snake=[];
-
-
-// 食物
-
-let food={};
-
-
-// 障碍物
-
-let obstacles=[];
-
-
-// 当前方向与下一步方向
-
-let direction="RIGHT";
-
-
-let nextDirection="RIGHT";
-
-
-// 分数
-
-let score=0;
-
-
-// 已移动步数与障碍物变换提示
-let moveCount=0;
-
-
-let obstacleMoveNotice=0;
-
-
-// 游戏速度(ms)
-
+let difficulty = "easy";
+let leaderboardDifficulty = "easy";
+let state = "MENU";
+let countdownStartTime = 0;
+let snake = [];
+let food = {};
+let obstacles = [];
+let direction = "RIGHT";
+let nextDirection = "RIGHT";
+let score = 0;
+let moveCount = 0;
+let obstacleMoveNotice = 0;
 let speed = DIFFICULTIES[difficulty].startSpeed;
+let bestScore = 0;
+let currentPlayerName = "匿名玩家";
+let leaderboards = loadLeaderboards();
 
-
-// 最高分
-
-let bestScore=0;
-
-
-function getBestScore(){
-
-    const storageKey =
-    difficulty==="medium"
-    ? "bestScore"
-    : "bestScore_" + difficulty;
-
-    return Number(
-        localStorage.getItem(storageKey)
-    ) || 0;
-
+function createEmptyLeaderboards() {
+    return { easy: [], medium: [], hard: [] };
 }
 
+function loadLeaderboards() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(LEADERBOARD_KEY));
+        const result = createEmptyLeaderboards();
 
-function saveBestScore(){
+        Object.keys(result).forEach(level => {
+            if (!Array.isArray(saved?.[level])) return;
 
-    const storageKey =
-    difficulty==="medium"
-    ? "bestScore"
-    : "bestScore_" + difficulty;
+            result[level] = saved[level]
+                .filter(item => item && Number.isFinite(Number(item.score)))
+                .map(item => ({
+                    id: String(item.id || ""),
+                    name: normalizePlayerName(item.name),
+                    score: Math.max(0, Number(item.score)),
+                    timestamp: Number(item.timestamp) || Date.now()
+                }))
+                .sort(compareScores)
+                .slice(0, MAX_LEADERBOARD_SIZE);
+        });
 
-    localStorage.setItem(
-        storageKey,
-        bestScore
-    );
-
+        return result;
+    } catch (error) {
+        return createEmptyLeaderboards();
+    }
 }
 
+function compareScores(a, b) {
+    return b.score - a.score || a.timestamp - b.timestamp;
+}
 
-// ======================
-// 初始化
-// ======================
+function normalizePlayerName(value) {
+    const cleaned = String(value || "")
+        .replace(/<[^>]*>/g, "")
+        .replace(/[<>]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 12);
 
-function resetGame(){
+    return cleaned || "匿名玩家";
+}
 
+function persistLeaderboards() {
+    try {
+        localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboards));
+    } catch (error) {
+        // 隐私浏览模式或存储空间不足时，榜单仍会在当前页面会话中工作。
+    }
+}
 
-    const settings=DIFFICULTIES[difficulty];
+function getLegacyBestScore(level) {
+    const storageKey = level === "medium" ? "bestScore" : `bestScore_${level}`;
+    return Number(localStorage.getItem(storageKey)) || 0;
+}
 
+function saveLegacyBestScore() {
+    const storageKey = difficulty === "medium" ? "bestScore" : `bestScore_${difficulty}`;
 
-    snake=[
+    try {
+        localStorage.setItem(storageKey, String(bestScore));
+    } catch (error) {
+        // 游戏本身不应因浏览器拒绝存储而中断。
+    }
+}
 
-        {x:400,y:400},
+function getBestScore(level) {
+    const rankingBest = leaderboards[level][0]?.score || 0;
+    return Math.max(rankingBest, getLegacyBestScore(level));
+}
 
-        {x:380,y:400},
+function migrateLegacyBestScores() {
+    let changed = false;
 
-        {x:360,y:400}
+    Object.keys(DIFFICULTIES).forEach(level => {
+        const legacyScore = getLegacyBestScore(level);
+        const legacyId = `legacy-${level}`;
 
+        if (legacyScore <= 0 || leaderboards[level].some(item => item.id === legacyId)) return;
+
+        leaderboards[level].push({
+            id: legacyId,
+            name: "历史最佳",
+            score: legacyScore,
+            timestamp: 1
+        });
+        leaderboards[level].sort(compareScores);
+        leaderboards[level] = leaderboards[level].slice(0, MAX_LEADERBOARD_SIZE);
+        changed = true;
+    });
+
+    if (changed) persistLeaderboards();
+}
+
+function recordScore() {
+    if (score <= 0) return null;
+
+    const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: currentPlayerName,
+        score,
+        timestamp: Date.now()
+    };
+
+    const allEntries = [...leaderboards[difficulty], entry].sort(compareScores);
+    const rank = allEntries.findIndex(item => item.id === entry.id) + 1;
+    const placed = rank > 0 && rank <= MAX_LEADERBOARD_SIZE;
+
+    leaderboards[difficulty] = allEntries.slice(0, MAX_LEADERBOARD_SIZE);
+    persistLeaderboards();
+    renderLeaderboard();
+
+    return { rank, placed };
+}
+
+function formatScore(value) {
+    return String(value).padStart(4, "0");
+}
+
+function renderLeaderboard() {
+    const scores = leaderboards[leaderboardDifficulty];
+    leaderboardListElement.replaceChildren();
+
+    leaderboardTabs.forEach(tab => {
+        const selected = tab.dataset.leaderboardDifficulty === leaderboardDifficulty;
+        tab.classList.toggle("active", selected);
+        tab.setAttribute("aria-selected", String(selected));
+    });
+
+    if (scores.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "emptyLeaderboard";
+
+        const title = document.createElement("strong");
+        title.textContent = "等待首位挑战者";
+
+        const hint = document.createElement("span");
+        hint.textContent = "完成一局游戏即可留下成绩";
+
+        empty.append(title, hint);
+        leaderboardListElement.append(empty);
+        return;
+    }
+
+    scores.forEach((entry, index) => {
+        const row = document.createElement("li");
+        row.className = "leaderboardRow";
+
+        const rank = document.createElement("span");
+        rank.className = "rankNumber";
+        rank.textContent = `#${String(index + 1).padStart(2, "0")}`;
+
+        const name = document.createElement("span");
+        name.className = "rankName";
+        name.textContent = entry.name;
+        name.title = entry.name;
+
+        const points = document.createElement("span");
+        points.className = "rankScore";
+        points.textContent = formatScore(entry.score);
+
+        row.append(rank, name, points);
+        leaderboardListElement.append(row);
+    });
+}
+
+function selectLeaderboard(level) {
+    leaderboardDifficulty = level;
+    renderLeaderboard();
+}
+
+function resetGame() {
+    const settings = DIFFICULTIES[difficulty];
+
+    snake = [
+        { x: 400, y: 400 },
+        { x: 380, y: 400 },
+        { x: 360, y: 400 }
     ];
 
+    direction = "RIGHT";
+    nextDirection = "RIGHT";
+    score = 0;
+    moveCount = 0;
+    obstacleMoveNotice = 0;
+    speed = settings.startSpeed;
+    bestScore = getBestScore(difficulty);
 
-    direction="RIGHT";
+    scoreElement.textContent = "0";
+    bestElement.textContent = String(bestScore);
+    speedElement.textContent = "1";
+    touchPauseElement.textContent = "暂停";
+    resultOverlayElement.hidden = true;
 
-
-    nextDirection="RIGHT";
-
-
-    score=0;
-
-
-    moveCount=0;
-
-
-    obstacleMoveNotice=0;
-
-
-    speed=settings.startSpeed;
-
-
-    bestScore=getBestScore();
-
-
-    speedElement.innerHTML = "Speed: 1";
-
-
-    scoreElement.innerHTML = "Score: 0";
-
-
-    bestElement.innerHTML = "Best: " + bestScore;
-
-
-    touchPauseElement.innerHTML="暂停";
-
-
-    obstacles=createObstacles();
-
-
-    food=createFood();
-
-
-    countdownStartTime=Date.now();
-
-
-    state="COUNTDOWN";
-
+    food = {};
+    obstacles = createObstacles();
+    food = createFood();
+    countdownStartTime = Date.now();
+    state = "COUNTDOWN";
 }
 
+function updateSpeed() {
+    const settings = DIFFICULTIES[difficulty];
 
+    speed = settings.startSpeed
+        - Math.floor(score / settings.speedUpEvery) * settings.speedStep;
+    speed = Math.max(speed, settings.minSpeed);
 
-// ======================
-// 根据分数调整速度
-// ======================
-
-function updateSpeed(){
-
-
-    const settings=DIFFICULTIES[difficulty];
-
-
-    speed =
-    settings.startSpeed
-    - Math.floor(score / settings.speedUpEvery)
-    * settings.speedStep;
-
-
-
-    if(speed < settings.minSpeed){
-
-        speed = settings.minSpeed;
-
-    }
-
-
-
-    // 计算速度等级
-
-    let level =
-    Math.floor(
-        (settings.startSpeed-speed)
-        / settings.speedStep
-    )+1;
-
-
-
-    speedElement.innerHTML =
-    "Speed: " + level;
-
-
+    const level = Math.floor((settings.startSpeed - speed) / settings.speedStep) + 1;
+    speedElement.textContent = String(level);
 }
 
-
-
-// ======================
-// 创建食物
-// ======================
-
-function createFood(){
-
-
-    while(true){
-
-
-        let f={
-
-            x:
-            Math.floor(
-                Math.random()*50
-            )*BLOCK,
-
-
-            y:
-            Math.floor(
-                Math.random()*40
-            )*BLOCK
-
+function createFood() {
+    while (true) {
+        const candidate = {
+            x: Math.floor(Math.random() * (WIDTH / BLOCK)) * BLOCK,
+            y: Math.floor(Math.random() * (HEIGHT / BLOCK)) * BLOCK
         };
 
+        const overlapsSnake = snake.some(part => part.x === candidate.x && part.y === candidate.y);
+        const overlapsObstacle = obstacles.some(item => item.x === candidate.x && item.y === candidate.y);
 
-
-        if(
-            !snake.some(
-                s =>
-                s.x===f.x &&
-                s.y===f.y
-            )
-            &&
-            !obstacles.some(
-                o =>
-                o.x===f.x &&
-                o.y===f.y
-            )
-        ){
-
-            return f;
-
-        }
-
+        if (!overlapsSnake && !overlapsObstacle) return candidate;
     }
-
 }
 
+function createObstacles() {
+    const list = [];
+    const obstacleCount = DIFFICULTIES[difficulty].obstacleCount;
 
-
-// ======================
-// 创建障碍物
-// ======================
-
-function createObstacles(){
-
-
-    let list=[];
-
-
-    const obstacleCount=
-    DIFFICULTIES[difficulty].obstacleCount;
-
-
-    while(list.length<obstacleCount){
-
-
-        let o={
-
-            x:
-            Math.floor(
-                Math.random()*50
-            )*BLOCK,
-
-
-            y:
-            Math.floor(
-                Math.random()*40
-            )*BLOCK
-
+    while (list.length < obstacleCount) {
+        const candidate = {
+            x: Math.floor(Math.random() * (WIDTH / BLOCK)) * BLOCK,
+            y: Math.floor(Math.random() * (HEIGHT / BLOCK)) * BLOCK
         };
-
-
 
         const inStartSafeArea =
-            Math.abs(o.x-snake[0].x) <= START_SAFE_RADIUS*BLOCK
-            &&
-            Math.abs(o.y-snake[0].y) <= START_SAFE_RADIUS*BLOCK;
+            Math.abs(candidate.x - snake[0].x) <= START_SAFE_RADIUS * BLOCK
+            && Math.abs(candidate.y - snake[0].y) <= START_SAFE_RADIUS * BLOCK;
+        const overlapsSnake = snake.some(part => part.x === candidate.x && part.y === candidate.y);
+        const overlapsFood = food.x === candidate.x && food.y === candidate.y;
+        const overlapsList = list.some(item => item.x === candidate.x && item.y === candidate.y);
 
-
-        if(
-            !snake.some(
-                s =>
-                s.x===o.x &&
-                s.y===o.y
-            )
-            &&
-            !inStartSafeArea
-            &&
-            !(
-                food.x===o.x &&
-                food.y===o.y
-            )
-            &&
-            !list.some(
-                item =>
-                item.x===o.x &&
-                item.y===o.y
-            )
-        ){
-
-            list.push(o);
-
+        if (!inStartSafeArea && !overlapsSnake && !overlapsFood && !overlapsList) {
+            list.push(candidate);
         }
-
-
     }
-
 
     return list;
-
 }
 
+function startGame(selectedDifficulty) {
+    difficulty = selectedDifficulty;
+    currentPlayerName = normalizePlayerName(playerNameElement.value);
+    playerNameElement.value = currentPlayerName;
 
-const DIFFICULTY_NAMES={
-    easy:"低等难度 · EASY",
-    medium:"中等难度 · MEDIUM",
-    hard:"高等难度 · HARD"
-};
+    try {
+        localStorage.setItem(PLAYER_NAME_KEY, currentPlayerName);
+    } catch (error) {
+        // 昵称仍会用于当前会话。
+    }
 
-
-function startGame(selectedDifficulty){
-
-    difficulty=selectedDifficulty;
-
-    currentDifficultyElement.innerHTML =
-    DIFFICULTY_NAMES[difficulty];
-
-    mainMenuElement.hidden=true;
-
-    gameScreenElement.hidden=false;
-
+    const settings = DIFFICULTIES[difficulty];
+    currentDifficultyElement.textContent = `${settings.name} · ${settings.englishName}`;
+    currentDifficultyElement.style.color = settings.color;
+    mainMenuElement.hidden = true;
+    gameScreenElement.hidden = false;
     resetGame();
-
     canvas.focus();
-
 }
 
-
-function showMainMenu(){
-
-    state="MENU";
-
-    gameScreenElement.hidden=true;
-
-    mainMenuElement.hidden=false;
-
-    difficultyButtons[0].focus();
-
+function showMainMenu() {
+    state = "MENU";
+    resultOverlayElement.hidden = true;
+    gameScreenElement.hidden = true;
+    mainMenuElement.hidden = false;
+    renderLeaderboard();
 }
 
+function finishGame() {
+    if (state === "GAMEOVER") return;
 
-difficultyButtons.forEach(button=>{
+    state = "GAMEOVER";
+    const result = recordScore();
+    resultScoreElement.textContent = String(score);
 
-    button.addEventListener(
-    "click",
-    function(){
-
-        startGame(button.dataset.difficulty);
-
-    });
-
-});
-
-
-backToMenuElement.addEventListener(
-"click",
-showMainMenu
-);
-
-
-function changeDirection(newDirection){
-
-    if(gameScreenElement.hidden){
-
-        return;
-
+    if (!result) {
+        resultRankElement.textContent = "再吃到一颗食物，就能留下榜单成绩。";
+    } else if (result.placed) {
+        resultRankElement.innerHTML = `恭喜进入 ${DIFFICULTIES[difficulty].name} <strong>第 ${result.rank} 名</strong>`;
+    } else {
+        const cutoff = leaderboards[difficulty][MAX_LEADERBOARD_SIZE - 1]?.score || 0;
+        resultRankElement.textContent = `本局排名第 ${result.rank}，Top 10 当前门槛为 ${cutoff} 分。`;
     }
 
-    const oppositeDirections={
-        UP:"DOWN",
-        DOWN:"UP",
-        LEFT:"RIGHT",
-        RIGHT:"LEFT"
+    resultOverlayElement.hidden = false;
+    playAgainElement.focus();
+}
+
+function changeDirection(newDirection) {
+    if (gameScreenElement.hidden) return;
+
+    const oppositeDirections = {
+        UP: "DOWN",
+        DOWN: "UP",
+        LEFT: "RIGHT",
+        RIGHT: "LEFT"
     };
 
-    if(newDirection!==oppositeDirections[direction]){
-
-        nextDirection=newDirection;
-
+    if (newDirection !== oppositeDirections[direction]) {
+        nextDirection = newDirection;
     }
-
 }
 
-
-function togglePause(){
-
-    if(state==="PLAYING"){
-
-        state="PAUSE";
-
-        touchPauseElement.innerHTML="继续";
-
+function togglePause() {
+    if (state === "PLAYING") {
+        state = "PAUSE";
+        touchPauseElement.textContent = "继续";
+    } else if (state === "PAUSE") {
+        state = "PLAYING";
+        touchPauseElement.textContent = "暂停";
     }
-
-    else if(state==="PAUSE"){
-
-        state="PLAYING";
-
-        touchPauseElement.innerHTML="暂停";
-
-    }
-
 }
 
+difficultyButtons.forEach(button => {
+    button.addEventListener("click", () => startGame(button.dataset.difficulty));
+});
 
-directionButtons.forEach(button=>{
+leaderboardTabs.forEach(tab => {
+    tab.addEventListener("click", () => selectLeaderboard(tab.dataset.leaderboardDifficulty));
+});
 
-    button.addEventListener(
-    "pointerdown",
-    function(e){
-
-        e.preventDefault();
-
+directionButtons.forEach(button => {
+    button.addEventListener("pointerdown", event => {
+        event.preventDefault();
         changeDirection(button.dataset.direction);
-
     });
-
 });
 
+playerNameElement.addEventListener("change", () => {
+    playerNameElement.value = normalizePlayerName(playerNameElement.value);
+});
 
-touchPauseElement.addEventListener(
-"click",
-togglePause
-);
+backToMenuElement.addEventListener("click", showMainMenu);
+resultToMenuElement.addEventListener("click", showMainMenu);
 
+viewLeaderboardElement.addEventListener("click", () => {
+    selectLeaderboard(difficulty);
+    showMainMenu();
+    document.querySelector(".leaderboardPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
-touchRestartElement.addEventListener(
-"click",
-function(){
-
+playAgainElement.addEventListener("click", () => {
     resetGame();
-
-    touchPauseElement.innerHTML="暂停";
-
-}
-);
-
-
-let touchStartX=0;
-
-
-let touchStartY=0;
-
-
-canvas.addEventListener(
-"touchstart",
-function(e){
-
-    touchStartX=e.touches[0].clientX;
-
-    touchStartY=e.touches[0].clientY;
-
-},
-{passive:true}
-);
-
-
-canvas.addEventListener(
-"touchend",
-function(e){
-
-    const deltaX=
-    e.changedTouches[0].clientX-touchStartX;
-
-    const deltaY=
-    e.changedTouches[0].clientY-touchStartY;
-
-    if(Math.max(Math.abs(deltaX),Math.abs(deltaY))<20){
-
-        return;
-
-    }
-
-    if(Math.abs(deltaX)>Math.abs(deltaY)){
-
-        changeDirection(deltaX>0 ? "RIGHT" : "LEFT");
-
-    }
-
-    else{
-
-        changeDirection(deltaY>0 ? "DOWN" : "UP");
-
-    }
-
-},
-{passive:true}
-);
-
-
-
-// ======================
-// 键盘
-// ======================
-
-document.addEventListener(
-"keydown",
-function(e){
-
-
-    if(e.key==="Escape" && !gameScreenElement.hidden){
-
-        showMainMenu();
-
-        return;
-
-    }
-
-
-    if(gameScreenElement.hidden){
-
-        return;
-
-    }
-
-
-
-    // 阻止方向键滚动网页
-
-    if(
-        e.key === "ArrowUp" ||
-        e.key === "ArrowDown" ||
-        e.key === "ArrowLeft" ||
-        e.key === "ArrowRight"
-    ){
-
-        e.preventDefault();
-
-    }
-
-
-
-    // 空格暂停
-
-    if(e.code==="Space"){
-
-
-        togglePause();
-
-
-        return;
-
-    }
-
-
-
-    // 游戏结束
-
-    if(state==="GAMEOVER"){
-
-
-        if(
-            e.key==="r"
-            ||
-            e.key==="R"
-        ){
-
-            resetGame();
-
-        }
-
-
-        return;
-
-    }
-
-
-
-    if(e.key==="ArrowUp") changeDirection("UP");
-
-    else if(e.key==="ArrowDown") changeDirection("DOWN");
-
-    else if(e.key==="ArrowLeft") changeDirection("LEFT");
-
-    else if(e.key==="ArrowRight") changeDirection("RIGHT");
-
-
+    canvas.focus();
 });
 
+touchPauseElement.addEventListener("click", togglePause);
+touchRestartElement.addEventListener("click", resetGame);
 
+canvas.addEventListener("click", () => canvas.focus());
 
-// ======================
-// 更新游戏
-// ======================
+let touchStartX = 0;
+let touchStartY = 0;
 
-function update(){
+canvas.addEventListener("touchstart", event => {
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+}, { passive: true });
 
+canvas.addEventListener("touchend", event => {
+    const deltaX = event.changedTouches[0].clientX - touchStartX;
+    const deltaY = event.changedTouches[0].clientY - touchStartY;
 
-    if(state==="COUNTDOWN"){
+    if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 20) return;
 
-        if(Date.now()-countdownStartTime>=COUNTDOWN_DURATION){
-
-            state="PLAYING";
-
-        }
-
-        else{
-
-            return;
-
-        }
-
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        changeDirection(deltaX > 0 ? "RIGHT" : "LEFT");
+    } else {
+        changeDirection(deltaY > 0 ? "DOWN" : "UP");
     }
+}, { passive: true });
 
+document.addEventListener("keydown", event => {
+    if (gameScreenElement.hidden) return;
 
-    if(state!=="PLAYING"){
-
+    if (event.key === "Escape") {
+        showMainMenu();
         return;
-
     }
 
-
-    direction=nextDirection;
-
-
-    if(obstacleMoveNotice>0){
-
-        obstacleMoveNotice--;
-
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) {
+        event.preventDefault();
     }
 
+    if (event.code === "Space") {
+        togglePause();
+        return;
+    }
 
+    if (event.key.toLowerCase() === "r") {
+        resetGame();
+        canvas.focus();
+        return;
+    }
 
-    let head={
+    if (state === "GAMEOVER") {
+        return;
+    }
 
-        x:snake[0].x,
+    if (event.key === "ArrowUp") changeDirection("UP");
+    else if (event.key === "ArrowDown") changeDirection("DOWN");
+    else if (event.key === "ArrowLeft") changeDirection("LEFT");
+    else if (event.key === "ArrowRight") changeDirection("RIGHT");
+});
 
-        y:snake[0].y
+function update() {
+    if (state === "COUNTDOWN") {
+        if (Date.now() - countdownStartTime >= COUNTDOWN_DURATION) {
+            state = "PLAYING";
+        } else {
+            return;
+        }
+    }
 
-    };
+    if (state !== "PLAYING") return;
 
+    direction = nextDirection;
+    if (obstacleMoveNotice > 0) obstacleMoveNotice -= 1;
 
-
-    if(direction==="UP")
-        head.y-=BLOCK;
-
-
-    if(direction==="DOWN")
-        head.y+=BLOCK;
-
-
-    if(direction==="LEFT")
-        head.x-=BLOCK;
-
-
-    if(direction==="RIGHT")
-        head.x+=BLOCK;
-
-
-
-
+    const head = { ...snake[0] };
+    if (direction === "UP") head.y -= BLOCK;
+    if (direction === "DOWN") head.y += BLOCK;
+    if (direction === "LEFT") head.x -= BLOCK;
+    if (direction === "RIGHT") head.x += BLOCK;
     snake.unshift(head);
 
-
-
-    // 吃食物
-
-    if(
-        head.x===food.x
-        &&
-        head.y===food.y
-    ){
-
+    if (head.x === food.x && head.y === food.y) {
         score += 10;
-
-
-        // 更新速度
-
+        scoreElement.textContent = String(score);
         updateSpeed();
 
-
-        scoreElement.innerHTML =
-        "Score: " + score;
-
-
-        if(score > bestScore){
-
-
+        if (score > bestScore) {
             bestScore = score;
-
-
-            saveBestScore();
-
-
-            bestElement.innerHTML =
-            "Best: " + bestScore;
-
-
+            bestElement.textContent = String(bestScore);
+            saveLegacyBestScore();
         }
 
-
-        food=createFood();
-
-
-    }
-    else{
-
-        // 没吃到食物，删除尾巴
-
+        food = createFood();
+    } else {
         snake.pop();
-
     }
 
+    const hitWall = head.x < 0 || head.x >= WIDTH || head.y < 0 || head.y >= HEIGHT;
+    const hitSelf = snake.slice(1).some(part => part.x === head.x && part.y === head.y);
+    const hitObstacle = obstacles.some(item => item.x === head.x && item.y === head.y);
 
-
-    // 撞墙
-
-    if(
-        head.x<0
-        ||
-        head.x>=WIDTH
-        ||
-        head.y<0
-        ||
-        head.y>=HEIGHT
-    ){
-
-        state="GAMEOVER";
-
+    if (hitWall || hitSelf || hitObstacle) {
+        finishGame();
+        return;
     }
 
+    moveCount += 1;
+    const moveEvery = DIFFICULTIES[difficulty].obstacleMoveEvery;
 
-
-    // 撞自己
-
-    for(
-        let i=1;
-        i<snake.length;
-        i++
-    ){
-
-        if(
-            head.x===snake[i].x
-            &&
-            head.y===snake[i].y
-        ){
-
-            state="GAMEOVER";
-
-        }
-
+    if (moveEvery > 0 && moveCount % moveEvery === 0) {
+        obstacles = createObstacles();
+        obstacleMoveNotice = 6;
     }
-
-
-
-    // 撞障碍
-
-
-    obstacles.forEach(o=>{
-
-
-        if(
-            head.x===o.x
-            &&
-            head.y===o.y
-        ){
-
-            state="GAMEOVER";
-
-        }
-
-
-    });
-
-
-    if(state==="PLAYING"){
-
-        moveCount++;
-
-        const moveEvery =
-        DIFFICULTIES[difficulty].obstacleMoveEvery;
-
-        if(
-            moveEvery>0
-            &&
-            moveCount%moveEvery===0
-        ){
-
-            obstacles=createObstacles();
-
-            obstacleMoveNotice=6;
-
-        }
-
-    }
-
-
 }
 
+function drawGrid() {
+    ctx.strokeStyle = "rgba(255,255,255,.035)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
 
-
-// ======================
-// 绘制
-// ======================
-
-function draw(){
-
-
-    ctx.fillStyle="black";
-
-
-    ctx.fillRect(
-        0,
-        0,
-        WIDTH,
-        HEIGHT
-    );
-
-
-
-    // 食物
-
-    ctx.fillStyle="red";
-
-
-    ctx.fillRect(
-
-        food.x,
-
-        food.y,
-
-        BLOCK,
-
-        BLOCK
-
-    );
-
-
-
-    // 障碍物
-
-    ctx.fillStyle="gray";
-
-
-    obstacles.forEach(o=>{
-
-
-        ctx.fillRect(
-
-            o.x,
-
-            o.y,
-
-            BLOCK,
-
-            BLOCK
-
-        );
-
-
-    });
-
-
-
-    // 蛇
-
-
-    snake.forEach(
-    (s,index)=>{
-
-
-        ctx.fillStyle =
-        index===0
-        ?
-        "lightgreen"
-        :
-        "green";
-
-
-        ctx.fillRect(
-
-            s.x,
-
-            s.y,
-
-            BLOCK,
-
-            BLOCK
-
-        );
-
-
-    });
-
-
-    if(obstacleMoveNotice>0){
-
-        ctx.fillStyle="yellow";
-
-        ctx.font="32px Arial";
-
-        ctx.textAlign="center";
-
-        ctx.fillText(
-            "OBSTACLES MOVED!",
-            WIDTH/2,
-            50
-        );
-
+    for (let x = BLOCK; x < WIDTH; x += BLOCK) {
+        ctx.moveTo(x + .5, 0);
+        ctx.lineTo(x + .5, HEIGHT);
     }
 
-
-
-    // 暂停界面
-
-    if(state==="PAUSE"){
-
-
-        ctx.fillStyle="white";
-
-        ctx.font="70px Arial";
-
-        ctx.textAlign="center";
-
-
-        ctx.fillText(
-
-            "PAUSE",
-
-            WIDTH/2,
-
-            HEIGHT/2
-
-        );
-
-
+    for (let y = BLOCK; y < HEIGHT; y += BLOCK) {
+        ctx.moveTo(0, y + .5);
+        ctx.lineTo(WIDTH, y + .5);
     }
 
+    ctx.stroke();
+}
 
+function drawCenteredOverlay(title, subtitle, color = "#ffffff") {
+    ctx.fillStyle = "rgba(2,5,3,.72)";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillStyle = color;
+    ctx.font = "bold 72px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(title, WIDTH / 2, HEIGHT / 2 - 10);
+    ctx.fillStyle = "#9ba79f";
+    ctx.font = "22px Arial";
+    ctx.fillText(subtitle, WIDTH / 2, HEIGHT / 2 + 50);
+}
 
-    // 开始倒计时
+function draw() {
+    ctx.fillStyle = "#020403";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    drawGrid();
 
+    if (food.x !== undefined) {
+        ctx.fillStyle = "#ff5f5f";
+        ctx.shadowColor = "rgba(255,95,95,.75)";
+        ctx.shadowBlur = 12;
+        ctx.fillRect(food.x + 3, food.y + 3, BLOCK - 6, BLOCK - 6);
+        ctx.shadowBlur = 0;
+    }
 
-    if(state==="COUNTDOWN"){
+    ctx.fillStyle = "#667169";
+    obstacles.forEach(item => {
+        ctx.fillRect(item.x + 2, item.y + 2, BLOCK - 4, BLOCK - 4);
+    });
 
+    snake.forEach((part, index) => {
+        ctx.fillStyle = index === 0 ? "#8affad" : "#2ca75a";
+        ctx.fillRect(part.x + 1, part.y + 1, BLOCK - 2, BLOCK - 2);
+    });
 
-        const elapsed=Date.now()-countdownStartTime;
+    if (obstacleMoveNotice > 0) {
+        ctx.fillStyle = "#f2c94c";
+        ctx.font = "bold 22px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("障碍物已换位", WIDTH / 2, 42);
+    }
 
+    if (state === "PAUSE") {
+        drawCenteredOverlay("PAUSE", "按空格键或暂停键继续");
+    }
 
-        let countdownText="3";
+    if (state === "COUNTDOWN") {
+        const elapsed = Date.now() - countdownStartTime;
+        let countdownText = "3";
 
+        if (elapsed >= 3000) countdownText = "GO!";
+        else if (elapsed >= 2000) countdownText = "1";
+        else if (elapsed >= 1000) countdownText = "2";
 
-        if(elapsed>=3000){
-
-            countdownText="GO!";
-
-        }
-
-        else if(elapsed>=2000){
-
-            countdownText="1";
-
-        }
-
-        else if(elapsed>=1000){
-
-            countdownText="2";
-
-        }
-
-
-        ctx.fillStyle="rgba(0,0,0,.55)";
-
-
-        ctx.fillRect(0,0,WIDTH,HEIGHT);
-
-
-        ctx.fillStyle="white";
-
-
-        ctx.font="bold 110px Arial";
-
-
-        ctx.textAlign="center";
-
-
-        ctx.fillText(
-
-            countdownText,
-
-            WIDTH/2,
-
-            HEIGHT/2
-
-        );
-
-
-        ctx.font="26px Arial";
-
-
-        ctx.fillStyle="#a7b2aa";
-
-
-        ctx.fillText(
-
-            window.matchMedia("(max-width: 800px)").matches
+        const hint = window.matchMedia("(max-width: 680px)").matches
             ? "滑动或点击方向键选择起步方向"
-            : "按方向键选择起步方向",
-
-            WIDTH/2,
-
-            HEIGHT/2+70
-
-        );
-
+            : "按方向键选择起步方向";
+        drawCenteredOverlay(countdownText, hint, DIFFICULTIES[difficulty].color);
     }
-
-
-
-
-    // 结束
-
-
-    if(state==="GAMEOVER"){
-
-
-        ctx.textAlign="center";
-
-
-        ctx.fillStyle="red";
-
-
-        ctx.font="70px Arial";
-
-
-        ctx.fillText(
-
-            "GAME OVER",
-
-            WIDTH/2,
-
-            HEIGHT/2-80
-
-        );
-
-
-
-        ctx.fillStyle="white";
-
-
-        ctx.font="30px Arial";
-
-
-        ctx.fillText(
-
-            "Score: "+score,
-
-            WIDTH/2,
-
-            HEIGHT/2
-
-        );
-
-
-
-        ctx.fillText(
-
-            window.matchMedia("(max-width: 800px)").matches
-            ? "Tap Restart Below"
-            : "Press R To Restart",
-
-            WIDTH/2,
-
-            HEIGHT/2+80
-
-        );
-
-
-    }
-
-
 }
 
-
-
-// ======================
-// 游戏循环
-// ======================
-
-function loop(){
-
-
+function gameLoop() {
     update();
-
-
     draw();
-
-
+    setTimeout(gameLoop, speed);
 }
 
+migrateLegacyBestScores();
 
-
-function gameLoop(){
-
-
-    loop();
-
-
-    setTimeout(
-        gameLoop,
-        speed
-    );
-
-
+try {
+    playerNameElement.value = localStorage.getItem(PLAYER_NAME_KEY) || "";
+} catch (error) {
+    playerNameElement.value = "";
 }
 
-
+renderLeaderboard();
 gameLoop();
-
-

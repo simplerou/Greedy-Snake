@@ -4,92 +4,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Greedy Snake</title>
+    <meta name="theme-color" content="#07100b">
+    <title>Greedy Snake · 经典贪吃蛇</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
 <main id="mainMenu">
+    <section class="menuShell" aria-labelledby="gameTitle">
+        <header class="menuHero">
+            <div>
+                <p class="eyebrow">CLASSIC ARCADE</p>
+                <h1 id="gameTitle"><span aria-hidden="true">●</span> Greedy Snake</h1>
+                <p class="menuSubtitle">选择难度，刷新你的最佳排名</p>
+            </div>
 
-    <section class="menuCard" aria-labelledby="gameTitle">
+            <label class="playerField" for="playerName">
+                <span>PLAYER</span>
+                <input id="playerName" maxlength="12" autocomplete="nickname" placeholder="输入玩家昵称">
+            </label>
+        </header>
 
-        <p class="eyebrow">CLASSIC ARCADE</p>
+        <div class="menuLayout">
+            <section class="difficultySection" aria-labelledby="difficultyTitle">
+                <div class="sectionHeading">
+                    <div>
+                        <span class="sectionIndex">01</span>
+                        <h2 id="difficultyTitle">选择难度</h2>
+                    </div>
+                    <span class="sectionNote">SELECT LEVEL</span>
+                </div>
 
-        <h1 id="gameTitle">🐍 Greedy Snake</h1>
+                <div class="difficultyGrid" aria-label="选择游戏难度">
+                    <button class="difficultyCard easy" data-difficulty="easy" type="button">
+                        <span class="difficultyLevel">E</span>
+                        <span class="difficultyCopy">
+                            <strong>低等难度</strong>
+                            <span class="englishName">EASY</span>
+                            <span class="difficultyDescription">移动缓慢 · 无障碍物<br>适合轻松热身</span>
+                        </span>
+                        <span class="playLabel">开始游戏 <span aria-hidden="true">↗</span></span>
+                    </button>
 
-        <p class="menuSubtitle">选择一个难度，开始你的贪吃蛇挑战</p>
+                    <button class="difficultyCard medium" data-difficulty="medium" type="button">
+                        <span class="difficultyLevel">M</span>
+                        <span class="difficultyCopy">
+                            <strong>中等难度</strong>
+                            <span class="englishName">MEDIUM</span>
+                            <span class="difficultyDescription">速度适中 · 10 个障碍物<br>经典而均衡的挑战</span>
+                        </span>
+                        <span class="playLabel">开始游戏 <span aria-hidden="true">↗</span></span>
+                    </button>
 
-        <div class="difficultyGrid" aria-label="选择游戏难度">
+                    <button class="difficultyCard hard" data-difficulty="hard" type="button">
+                        <span class="difficultyLevel">H</span>
+                        <span class="difficultyCopy">
+                            <strong>高等难度</strong>
+                            <span class="englishName">HARD</span>
+                            <span class="difficultyDescription">高速移动 · 15 个障碍物<br>障碍物每 25 步换位</span>
+                        </span>
+                        <span class="playLabel">开始游戏 <span aria-hidden="true">↗</span></span>
+                    </button>
+                </div>
+            </section>
 
-            <button class="difficultyCard easy" data-difficulty="easy" type="button">
-                <span class="difficultyLevel">01</span>
-                <strong>低等难度</strong>
-                <span class="englishName">EASY</span>
-                <span class="difficultyDescription">移动缓慢 · 没有障碍物<br>适合第一次游玩的新手</span>
-                <span class="playLabel">开始游戏 →</span>
-            </button>
+            <aside class="leaderboardPanel" aria-labelledby="leaderboardTitle">
+                <div class="sectionHeading leaderboardHeading">
+                    <div>
+                        <span class="sectionIndex">02</span>
+                        <h2 id="leaderboardTitle">本机榜单</h2>
+                    </div>
+                    <span class="liveBadge"><i></i> TOP 10</span>
+                </div>
 
-            <button class="difficultyCard medium" data-difficulty="medium" type="button">
-                <span class="difficultyLevel">02</span>
-                <strong>中等难度</strong>
-                <span class="englishName">MEDIUM</span>
-                <span class="difficultyDescription">速度适中 · 10 个障碍物<br>经典而均衡的挑战</span>
-                <span class="playLabel">开始游戏 →</span>
-            </button>
+                <div class="leaderboardTabs" role="tablist" aria-label="榜单难度">
+                    <button class="leaderboardTab active" data-leaderboard-difficulty="easy" role="tab" aria-selected="true" type="button">低等</button>
+                    <button class="leaderboardTab" data-leaderboard-difficulty="medium" role="tab" aria-selected="false" type="button">中等</button>
+                    <button class="leaderboardTab" data-leaderboard-difficulty="hard" role="tab" aria-selected="false" type="button">高等</button>
+                </div>
 
-            <button class="difficultyCard hard" data-difficulty="hard" type="button">
-                <span class="difficultyLevel">03</span>
-                <strong>高等难度</strong>
-                <span class="englishName">HARD</span>
-                <span class="difficultyDescription">高速移动 · 15 个障碍物<br>障碍物每 25 步改变位置</span>
-                <span class="playLabel">开始游戏 →</span>
-            </button>
-
+                <ol id="leaderboardList" class="leaderboardList" aria-live="polite"></ol>
+                <p class="leaderboardFootnote">成绩保存在当前浏览器中</p>
+            </aside>
         </div>
 
-        <p class="controlsTip desktopTip">方向键控制移动 · 空格暂停 · R 键重新开始</p>
-        <p class="controlsTip mobileTip">滑动画布或点击方向键移动 · 点击暂停键暂停</p>
-
+        <footer class="menuFooter">
+            <p class="controlsTip desktopTip"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 控制移动　<kbd>Space</kbd> 暂停　<kbd>R</kbd> 重新开始</p>
+            <p class="controlsTip mobileTip">滑动画布或点击方向键移动 · 点击暂停键暂停</p>
+            <span>LOCAL RANKING SYSTEM / 2026</span>
+        </footer>
     </section>
-
 </main>
 
-
 <main id="gameScreen" hidden>
-
     <header class="gameHeader">
         <button id="backToMenu" type="button">← 返回主界面</button>
-        <h1>🐍 Greedy Snake</h1>
+        <h1><span aria-hidden="true">●</span> Greedy Snake</h1>
         <span id="currentDifficulty" aria-live="polite"></span>
     </header>
 
     <div id="info">
-        <span id="score">Score: 0</span>
-        <span id="best">Best: 0</span>
-        <span id="speed">Speed: 1</span>
+        <span id="score"><small>SCORE</small><strong>0</strong></span>
+        <span id="best"><small>BEST</small><strong>0</strong></span>
+        <span id="speed"><small>SPEED</small><strong>1</strong></span>
     </div>
 
     <div id="gameBox">
-        <canvas id="game" width="1000" height="800" tabindex="0"></canvas>
+        <canvas id="game" width="1000" height="800" tabindex="0" aria-label="贪吃蛇游戏区域"></canvas>
     </div>
 
     <section id="touchControls" aria-label="手机游戏控制">
-
         <button class="directionButton up" data-direction="UP" type="button" aria-label="向上">▲</button>
         <button class="directionButton left" data-direction="LEFT" type="button" aria-label="向左">◀</button>
         <button id="touchPause" type="button" aria-label="暂停或继续">暂停</button>
         <button class="directionButton right" data-direction="RIGHT" type="button" aria-label="向右">▶</button>
         <button class="directionButton down" data-direction="DOWN" type="button" aria-label="向下">▼</button>
         <button id="touchRestart" type="button">重新开始</button>
-
     </section>
 
+    <section id="resultOverlay" class="resultOverlay" hidden aria-labelledby="resultTitle">
+        <div class="resultCard">
+            <p class="eyebrow">RUN COMPLETE</p>
+            <h2 id="resultTitle">游戏结束</h2>
+            <div class="resultScore">
+                <span>本局得分</span>
+                <strong id="resultScore">0</strong>
+            </div>
+            <p id="resultRank" class="resultRank"></p>
+            <div class="resultActions">
+                <button id="playAgain" class="primaryAction" type="button">再来一局</button>
+                <button id="viewLeaderboard" type="button">查看榜单</button>
+                <button id="resultToMenu" type="button">返回菜单</button>
+            </div>
+        </div>
+    </section>
 </main>
-
 
 <script src="snake.js"></script>
 
 </body>
-
 </html>
