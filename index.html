@@ -422,6 +422,7 @@
 
         .card h3 {
             color: var(--text);
+            margin: 0;
             font-size: 22px;
             letter-spacing: -.5px;
         }
@@ -434,10 +435,34 @@
             margin-top: 4px;
         }
 
-        .cardDesc {
-            color: var(--muted);
-            font-size: 12.5px;
-            line-height: 1.8;
+        .cardSpecs {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .cardSpecs li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, .06);
+            font-size: 12px;
+        }
+
+        .cardSpecs li:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .cardSpecs span {
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .cardSpecs strong {
+            color: var(--text);
+            font-weight: 700;
         }
 
         .cardBest {
@@ -459,24 +484,6 @@
             font-family: Consolas, monospace;
             font-size: 20px;
             color: currentColor;
-        }
-
-        .cardPlay {
-            display: inline-flex;
-            align-items: center;
-            justify-content: space-between;
-            color: currentColor;
-            font-size: 12px;
-            font-weight: 800;
-            letter-spacing: 1px;
-        }
-
-        .card:hover .cardPlay .go {
-            transform: translateX(5px);
-        }
-
-        .cardPlay .go {
-            transition: transform .25s ease;
         }
 
         /* ════════════════════════════════
@@ -628,53 +635,62 @@
     <div class="cards">
         <div class="card easy">
             <div class="cardTop">
-                <span class="badge">EASY</span>
                 <span class="cardIcon">🌿</span>
+                <span class="badge">EASY</span>
             </div>
-            <div>
+            <div class="cardTitle">
                 <h3>低等难度</h3>
-                <p class="en">WARM UP</p>
+                <span class="en">WARM UP</span>
             </div>
-            <p class="cardDesc">移动缓慢 · 无障碍物<br>适合热身，轻松上手</p>
+            <ul class="cardSpecs">
+                <li><span>移动速度</span><strong>悠闲</strong></li>
+                <li><span>障碍物</span><strong>无</strong></li>
+                <li><span>适合</span><strong>轻松热身</strong></li>
+            </ul>
             <div class="cardBest">
                 <span>本机最佳</span>
                 <strong id="bestEasy">----</strong>
             </div>
-            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
         </div>
 
         <div class="card medium">
             <div class="cardTop">
-                <span class="badge">MEDIUM</span>
                 <span class="cardIcon">⚡</span>
+                <span class="badge">MEDIUM</span>
             </div>
-            <div>
+            <div class="cardTitle">
                 <h3>中等难度</h3>
-                <p class="en">CLASSIC</p>
+                <span class="en">CLASSIC</span>
             </div>
-            <p class="cardDesc">速度适中 · 10 个障碍物<br>经典而均衡的挑战</p>
+            <ul class="cardSpecs">
+                <li><span>移动速度</span><strong>适中</strong></li>
+                <li><span>障碍物</span><strong>10 个</strong></li>
+                <li><span>适合</span><strong>经典挑战</strong></li>
+            </ul>
             <div class="cardBest">
                 <span>本机最佳</span>
                 <strong id="bestMedium">----</strong>
             </div>
-            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
         </div>
 
         <div class="card hard">
             <div class="cardTop">
-                <span class="badge">HARD</span>
                 <span class="cardIcon">🔥</span>
+                <span class="badge">HARD</span>
             </div>
-            <div>
+            <div class="cardTitle">
                 <h3>高等难度</h3>
-                <p class="en">NIGHTMARE</p>
+                <span class="en">NIGHTMARE</span>
             </div>
-            <p class="cardDesc">高速移动 · 15 个障碍物<br>障碍物每 25 步换位</p>
+            <ul class="cardSpecs">
+                <li><span>移动速度</span><strong>极速</strong></li>
+                <li><span>障碍物</span><strong>15 个</strong></li>
+                <li><span>特色</span><strong>每 25 步换位</strong></li>
+            </ul>
             <div class="cardBest">
                 <span>本机最佳</span>
                 <strong id="bestHard">----</strong>
             </div>
-            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
         </div>
     </div>
 </section>
