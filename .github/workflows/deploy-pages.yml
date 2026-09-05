@@ -32,7 +32,7 @@ jobs:
       - name: Upload game files
         uses: actions/upload-pages-artifact@v4
         with:
-          path: web_game
+          path: .
 
       - name: Deploy GitHub Pages
         id: deployment

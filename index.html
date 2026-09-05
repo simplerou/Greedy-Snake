@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#050807">
+    <title>Greedy Snake · 经典贪吃蛇</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #050807;
+            --green: #69f49a;
+            --green-dim: rgba(105, 244, 154, .55);
+            --yellow: #f2c94c;
+            --red: #ff6969;
+            --blue: #6ec6ff;
+            --text: #f3f7f4;
+            --muted: #8d9a91;
+            --dim: #59645d;
+            --line: #263129;
+            --panel: #0b100d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* ════════════════════════════════
+           背景：AI 贪吃蛇演示 + 氛围层
+           ════════════════════════════════ */
+        #demoCanvas {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            opacity: .5;
+            z-index: 0;
+        }
+
+        .scanlines {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, .18) 0px,
+                rgba(0, 0, 0, .18) 1px,
+                transparent 1px,
+                transparent 4px
+            );
+            opacity: .35;
+        }
+
+        .vignette {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0, 0, 0, .55) 100%);
+        }
+
+        .glow-orb {
+            position: fixed;
+            z-index: 0;
+            border-radius: 50%;
+            filter: blur(90px);
+            pointer-events: none;
+        }
+
+        .glow-orb.one {
+            width: 480px;
+            height: 480px;
+            top: -140px;
+            right: -100px;
+            background: rgba(105, 244, 154, .09);
+        }
+
+        .glow-orb.two {
+            width: 380px;
+            height: 380px;
+            bottom: -120px;
+            left: -80px;
+            background: rgba(110, 198, 255, .06);
+        }
+
+        /* ════════════════════════════════
+           Hero 区
+           ════════════════════════════════ */
+        .hero {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 60px 24px 40px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 16px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(11, 16, 13, .7);
+            color: var(--green);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 4px;
+            animation: fadeDown .8s ease both;
+        }
+
+        .eyebrow i {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 10px var(--green);
+            animation: blink 1.6s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .25; }
+        }
+
+        .hero h1 {
+            margin: 28px 0 0;
+            font-size: clamp(52px, 10vw, 128px);
+            font-weight: 900;
+            line-height: .95;
+            letter-spacing: -4px;
+            animation: fadeDown .8s .1s ease both;
+        }
+
+        .hero h1 .word {
+            color: var(--text);
+        }
+
+        .hero h1 .accent {
+            background: linear-gradient(120deg, var(--green) 20%, #b6ffd4 50%, var(--green) 80%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            animation: shine 4s linear infinite;
+            filter: drop-shadow(0 0 26px rgba(105, 244, 154, .35));
+        }
+
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+
+        .tagline {
+            margin: 22px 0 0;
+            max-width: 460px;
+            color: var(--muted);
+            font-size: clamp(14px, 2vw, 17px);
+            line-height: 1.8;
+            animation: fadeDown .8s .2s ease both;
+        }
+
+        .tagline strong {
+            color: var(--text);
+        }
+
+        /* ── CTA 按钮 ── */
+        .ctaRow {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 44px;
+            animation: fadeDown .8s .3s ease both;
+        }
+
+        .cta {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 44px;
+            border-radius: 999px;
+            background: var(--green);
+            color: #061009;
+            font-size: 17px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            text-decoration: none;
+            box-shadow:
+                0 0 0 1px rgba(105, 244, 154, .4),
+                0 12px 40px rgba(105, 244, 154, .28);
+            transition: transform .25s ease, box-shadow .25s ease;
+            overflow: hidden;
+        }
+
+        .cta::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -80%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .45), transparent);
+            transform: skewX(-20deg);
+            animation: sweep 3.2s ease-in-out infinite;
+        }
+
+        @keyframes sweep {
+            0%, 55% { left: -80%; }
+            100% { left: 160%; }
+        }
+
+        .cta:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow:
+                0 0 0 1px rgba(105, 244, 154, .6),
+                0 18px 55px rgba(105, 244, 154, .42);
+        }
+
+        .cta .arrow {
+            transition: transform .25s ease;
+        }
+
+        .cta:hover .arrow {
+            transform: translateX(5px);
+        }
+
+        .ctaGhost {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 18px 30px;
+            border: 1px solid var(--line-bright, #3d4c42);
+            border-radius: 999px;
+            background: rgba(11, 16, 13, .7);
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: border-color .25s ease, color .25s ease, transform .25s ease;
+        }
+
+        .ctaGhost:hover {
+            border-color: var(--green);
+            color: var(--text);
+            transform: translateY(-3px);
+        }
+
+        .heroHint {
+            margin-top: 30px;
+            color: var(--dim);
+            font-size: 11px;
+            letter-spacing: 2px;
+            animation: fadeDown .8s .4s ease both;
+        }
+
+        .heroHint kbd {
+            min-width: 20px;
+            display: inline-block;
+            margin: 0 2px;
+            padding: 3px 6px;
+            border: 1px solid #3d4c42;
+            border-radius: 4px;
+            background: #101612;
+            color: #9da9a1;
+            font-family: inherit;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(24px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── 向下滚动指示 ── */
+        .scrollCue {
+            position: absolute;
+            bottom: 26px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--dim);
+            font-size: 10px;
+            letter-spacing: 3px;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        .scrollCue::after {
+            content: "▼";
+            display: block;
+            text-align: center;
+            margin-top: 6px;
+            font-size: 9px;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translate(-50%, 0); opacity: .7; }
+            50% { transform: translate(-50%, 8px); opacity: 1; }
+        }
+
+        /* ════════════════════════════════
+           难度卡片区
+           ════════════════════════════════ */
+        .section {
+            position: relative;
+            z-index: 2;
+            width: min(1080px, 100%);
+            margin: 0 auto;
+            padding: 90px 24px 30px;
+        }
+
+        .sectionHead {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .sectionHead h2 {
+            font-size: clamp(24px, 3.4vw, 34px);
+            letter-spacing: -1px;
+        }
+
+        .sectionHead h2 em {
+            font-style: normal;
+            color: var(--green);
+        }
+
+        .sectionHead p {
+            color: var(--dim);
+            font-size: 11px;
+            letter-spacing: 2.5px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding: 26px 24px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background:
+                linear-gradient(160deg, rgba(255, 255, 255, .04), transparent 45%),
+                rgba(11, 16, 13, .88);
+            text-decoration: none;
+            color: inherit;
+            backdrop-filter: blur(4px);
+            transition: transform .28s ease, border-color .28s ease, box-shadow .28s ease;
+            overflow: hidden;
+        }
+
+        .card::after {
+            content: "";
+            position: absolute;
+            inset: auto 0 0;
+            height: 3px;
+            background: currentColor;
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform .3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            border-color: currentColor;
+        }
+
+        .card:hover::after {
+            transform: scaleX(1);
+        }
+
+        .card.easy { color: var(--green); }
+        .card.medium { color: var(--yellow); }
+        .card.hard { color: var(--red); }
+
+        .cardTop {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .badge {
+            padding: 5px 12px;
+            border-radius: 999px;
+            border: 1px solid currentColor;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 2px;
+        }
+
+        .cardIcon {
+            font-size: 30px;
+            filter: drop-shadow(0 0 12px currentColor);
+        }
+
+        .card h3 {
+            color: var(--text);
+            font-size: 22px;
+            letter-spacing: -.5px;
+        }
+
+        .card .en {
+            color: currentColor;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            margin-top: 4px;
+        }
+
+        .cardDesc {
+            color: var(--muted);
+            font-size: 12.5px;
+            line-height: 1.8;
+        }
+
+        .cardBest {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-top: auto;
+            padding-top: 16px;
+            border-top: 1px dashed rgba(255, 255, 255, .1);
+        }
+
+        .cardBest span {
+            color: var(--dim);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+        }
+
+        .cardBest strong {
+            font-family: Consolas, monospace;
+            font-size: 20px;
+            color: currentColor;
+        }
+
+        .cardPlay {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            color: currentColor;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .card:hover .cardPlay .go {
+            transform: translateX(5px);
+        }
+
+        .cardPlay .go {
+            transition: transform .25s ease;
+        }
+
+        /* ════════════════════════════════
+           特色区
+           ════════════════════════════════ */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            padding-bottom: 30px;
+        }
+
+        .feature {
+            padding: 20px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: rgba(11, 16, 13, .6);
+            text-align: left;
+        }
+
+        .feature .fi {
+            font-size: 22px;
+        }
+
+        .feature h4 {
+            margin: 10px 0 6px;
+            font-size: 14px;
+        }
+
+        .feature p {
+            color: var(--muted);
+            font-size: 11.5px;
+            line-height: 1.7;
+        }
+
+        /* ════════════════════════════════
+           页脚
+           ════════════════════════════════ */
+        footer {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            width: min(1080px, 100%);
+            margin: 0 auto;
+            padding: 26px 24px 34px;
+            border-top: 1px solid var(--line);
+            color: var(--dim);
+            font-size: 10px;
+            letter-spacing: 2px;
+        }
+
+        footer a {
+            color: var(--green);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* ════════════════════════════════
+           响应式
+           ════════════════════════════════ */
+        @media (max-width: 900px) {
+            .cards {
+                grid-template-columns: 1fr;
+            }
+
+            .features {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 560px) {
+            .hero h1 {
+                letter-spacing: -2px;
+            }
+
+            .ctaRow {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            .cta,
+            .ctaGhost {
+                width: min(320px, 100%);
+                justify-content: center;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            footer {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- 氛围层 -->
+<canvas id="demoCanvas" aria-hidden="true"></canvas>
+<div class="glow-orb one" aria-hidden="true"></div>
+<div class="glow-orb two" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<!-- Hero -->
+<main class="hero">
+    <p class="eyebrow"><i></i> CLASSIC ARCADE · 2026</p>
+    <h1><span class="word">GREEDY</span> <span class="accent">SNAKE</span></h1>
+    <p class="tagline">吃掉每一颗食物，躲开障碍与自己的尾巴——<strong>刷新你的本机最佳排名</strong>。</p>
+
+    <div class="ctaRow">
+        <a class="cta" href="web_game/page/home.html">▶ 开始游戏 <span class="arrow">→</span></a>
+        <a class="ctaGhost" href="#difficulty">查看难度</a>
+    </div>
+
+    <p class="heroHint">
+        <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 移动　<kbd>Space</kbd> 暂停　<kbd>R</kbd> 重开
+        　·　支持手机触屏
+    </p>
+
+    <span class="scrollCue">SCROLL</span>
+</main>
+
+<!-- 难度选择 -->
+<section class="section" id="difficulty">
+    <div class="sectionHead">
+        <h2>战场强度<em>任你选择</em></h2>
+        <p>SELECT LEVEL</p>
+    </div>
+
+    <div class="cards">
+        <div class="card easy">
+            <div class="cardTop">
+                <span class="badge">EASY</span>
+                <span class="cardIcon">🌿</span>
+            </div>
+            <div>
+                <h3>低等难度</h3>
+                <p class="en">WARM UP</p>
+            </div>
+            <p class="cardDesc">移动缓慢 · 无障碍物<br>适合热身，轻松上手</p>
+            <div class="cardBest">
+                <span>本机最佳</span>
+                <strong id="bestEasy">----</strong>
+            </div>
+            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
+        </div>
+
+        <div class="card medium">
+            <div class="cardTop">
+                <span class="badge">MEDIUM</span>
+                <span class="cardIcon">⚡</span>
+            </div>
+            <div>
+                <h3>中等难度</h3>
+                <p class="en">CLASSIC</p>
+            </div>
+            <p class="cardDesc">速度适中 · 10 个障碍物<br>经典而均衡的挑战</p>
+            <div class="cardBest">
+                <span>本机最佳</span>
+                <strong id="bestMedium">----</strong>
+            </div>
+            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
+        </div>
+
+        <div class="card hard">
+            <div class="cardTop">
+                <span class="badge">HARD</span>
+                <span class="cardIcon">🔥</span>
+            </div>
+            <div>
+                <h3>高等难度</h3>
+                <p class="en">NIGHTMARE</p>
+            </div>
+            <p class="cardDesc">高速移动 · 15 个障碍物<br>障碍物每 25 步换位</p>
+            <div class="cardBest">
+                <span>本机最佳</span>
+                <strong id="bestHard">----</strong>
+            </div>
+            <span class="cardPlay">进入挑战 <span class="go">→</span></span>
+        </div>
+    </div>
+</section>
+
+<!-- 特色 -->
+<section class="section">
+    <div class="sectionHead">
+        <h2>为什么好玩</h2>
+        <p>FEATURES</p>
+    </div>
+
+    <div class="features">
+        <div class="feature">
+            <span class="fi">🏆</span>
+            <h4>本机排行榜</h4>
+            <p>每个难度独立 Top 10，成绩保存在浏览器中，随时挑战自己。</p>
+        </div>
+        <div class="feature">
+            <span class="fi">📈</span>
+            <h4>动态加速</h4>
+            <p>分数越高蛇越快，手速与预判的双重考验。</p>
+        </div>
+        <div class="feature">
+            <span class="fi">🧱</span>
+            <h4>障碍物系统</h4>
+            <p>高等难度下障碍物每 25 步换位，永远保持新鲜感。</p>
+        </div>
+        <div class="feature">
+            <span class="fi">📱</span>
+            <h4>全端适配</h4>
+            <p>桌面键盘、手机滑动、虚拟方向键，随时随地开一局。</p>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <span>GREEDY SNAKE / LOCAL RANKING SYSTEM / 2026</span>
+</footer>
+
+<script>
+    /* ════════════════════════════════
+       背景：自动寻路的演示贪吃蛇
+       ════════════════════════════════ */
+    (function () {
+        const canvas = document.getElementById("demoCanvas");
+        const ctx = canvas.getContext("2d");
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        const CELL = 36;
+        let cols = 0;
+        let rows = 0;
+        let snake = [];
+        let dir = { x: 1, y: 0 };
+        let food = { x: 0, y: 0 };
+        let deadFade = 0;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            cols = Math.ceil(canvas.width / CELL);
+            rows = Math.ceil(canvas.height / CELL);
+            resetSnake();
+        }
+
+        function resetSnake() {
+            const startY = Math.floor(rows / 2);
+            const startX = Math.floor(cols / 4);
+            snake = [];
+            for (let i = 0; i < 6; i++) {
+                snake.push({ x: startX - i, y: startY });
+            }
+            dir = { x: 1, y: 0 };
+            placeFood();
+        }
+
+        function placeFood() {
+            let tries = 0;
+            do {
+                food = {
+                    x: Math.floor(Math.random() * cols),
+                    y: Math.floor(Math.random() * rows)
+                };
+                tries++;
+            } while (tries < 200 && snake.some(p => p.x === food.x && p.y === food.y));
+        }
+
+        function occupied(x, y, ignoreTail) {
+            return snake.some((p, i) => {
+                if (ignoreTail && i === snake.length - 1) return false;
+                return p.x === x && p.y === y;
+            });
+        }
+
+        function step() {
+            const head = snake[0];
+            // 候选方向：优先靠近食物
+            const prefs = [];
+            const dx = food.x - head.x;
+            const dy = food.y - head.y;
+
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                if (dx !== 0) prefs.push({ x: Math.sign(dx), y: 0 });
+                if (dy !== 0) prefs.push({ x: 0, y: Math.sign(dy) });
+            } else {
+                if (dy !== 0) prefs.push({ x: 0, y: Math.sign(dy) });
+                if (dx !== 0) prefs.push({ x: Math.sign(dx), y: 0 });
+            }
+            // 备选：其余方向
+            [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+                .forEach(d => prefs.push(d));
+
+            let next = null;
+            for (const d of prefs) {
+                // 不能直接掉头
+                if (d.x === -dir.x && d.y === -dir.y) continue;
+                const nx = head.x + d.x;
+                const ny = head.y + d.y;
+                if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                if (occupied(nx, ny, true)) continue;
+                next = { d, nx, ny };
+                break;
+            }
+
+            if (!next) {
+                // 无路可走：淡出后重生
+                deadFade = 12;
+                resetSnake();
+                return;
+            }
+
+            dir = next.d;
+            snake.unshift({ x: next.nx, y: next.ny });
+
+            if (next.nx === food.x && next.ny === food.y) {
+                if (snake.length > 40) snake.pop(); // 限制长度，避免占满全屏
+                placeFood();
+            } else {
+                snake.pop();
+            }
+        }
+
+        function roundRect(x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 淡网格
+            ctx.strokeStyle = "rgba(255,255,255,.03)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = CELL; x < canvas.width; x += CELL) {
+                ctx.moveTo(x + .5, 0);
+                ctx.lineTo(x + .5, canvas.height);
+            }
+            for (let y = CELL; y < canvas.height; y += CELL) {
+                ctx.moveTo(0, y + .5);
+                ctx.lineTo(canvas.width, y + .5);
+            }
+            ctx.stroke();
+
+            // 食物
+            ctx.fillStyle = "rgba(255,95,95,.5)";
+            ctx.shadowColor = "rgba(255,95,95,.5)";
+            ctx.shadowBlur = 14;
+            roundRect(food.x * CELL + 8, food.y * CELL + 8, CELL - 16, CELL - 16, 4);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // 蛇
+            snake.forEach((p, i) => {
+                const t = i / snake.length;
+                ctx.fillStyle = i === 0
+                    ? "rgba(138,255,173,.8)"
+                    : `rgba(44,167,90,${0.42 - t * 0.3})`;
+                roundRect(p.x * CELL + 3, p.y * CELL + 3, CELL - 6, CELL - 6, 6);
+                ctx.fill();
+            });
+        }
+
+        let lastStep = 0;
+        function loop(now) {
+            if (now - lastStep > 130) {
+                lastStep = now;
+                step();
+            }
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        window.addEventListener("resize", resize);
+        resize();
+
+        if (reducedMotion) {
+            draw(); // 静态一帧
+        } else {
+            requestAnimationFrame(loop);
+        }
+    })();
+
+    /* ════════════════════════════════
+       从 localStorage 读取本机最佳
+       ════════════════════════════════ */
+    (function () {
+        const KEY = "greedySnakeLeaderboardV1";
+        let boards = null;
+
+        try {
+            boards = JSON.parse(localStorage.getItem(KEY));
+        } catch (error) {
+            boards = null;
+        }
+
+        function topScore(level) {
+            const list = boards && Array.isArray(boards[level]) ? boards[level] : [];
+            const best = list.length ? list[0].score : 0;
+            return best > 0 ? String(best).padStart(4, "0") : "----";
+        }
+
+        document.getElementById("bestEasy").textContent = topScore("easy");
+        document.getElementById("bestMedium").textContent = topScore("medium");
+        document.getElementById("bestHard").textContent = topScore("hard");
+    })();
+</script>
+
+</body>
+
+</html>
