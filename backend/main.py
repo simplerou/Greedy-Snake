@@ -116,5 +116,23 @@ def leaderboard(difficulty: str, limit: int = 10) -> list[Score]:
     return rows
 
 
-# 注意：静态文件挂载必须放在所有 API 路由之后
-app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")
+# ── 前端静态托管（放在所有 API 路由之后）─────────────
+# 只挂载需要的文件/目录，避免把整个仓库（含 .git）暴露到公网
+from fastapi.responses import FileResponse  # noqa: E402
+
+
+@app.get("/", include_in_schema=False)
+def home() -> FileResponse:
+    return FileResponse(ROOT / "index.html", media_type="text/html")
+
+
+@app.get("/README.md", include_in_schema=False)
+def readme() -> FileResponse:
+    return FileResponse(ROOT / "README.md", media_type="text/markdown")
+
+
+app.mount(
+    "/web_game",
+    StaticFiles(directory=str(ROOT / "web_game"), html=True),
+    name="web_game",
+)

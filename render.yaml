@@ -1,0 +1,14 @@
+# Render 部署蓝图：在 Render 控制台选择 "Blueprint" 时自动读取本文件
+services:
+  - type: web
+    name: greedy-snake
+    runtime: python
+    plan: free
+    region: singapore          # 离中国较近；如不可选可改 oregon / frankfurt
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      # 部署时在 Render 控制台填入云数据库连接串（TiDB / Aiven）
+      - key: DATABASE_URL
+        sync: false
