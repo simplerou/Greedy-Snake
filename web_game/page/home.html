@@ -84,8 +84,13 @@
                     <button class="leaderboardTab" data-leaderboard-difficulty="hard" role="tab" aria-selected="false" type="button">高等</button>
                 </div>
 
+                <div class="scopeToggle" role="group" aria-label="榜单范围">
+                    <button class="scopeBtn active" data-scope="local" type="button">本机</button>
+                    <button class="scopeBtn" data-scope="global" type="button">全球</button>
+                </div>
+
                 <ol id="leaderboardList" class="leaderboardList" aria-live="polite"></ol>
-                <p class="leaderboardFootnote">成绩保存在当前浏览器中</p>
+                <p class="leaderboardFootnote">本机成绩存于浏览器 · 全球榜单需启动后端</p>
             </aside>
         </div>
 

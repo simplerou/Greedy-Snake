@@ -30,6 +30,7 @@ const statMaxSpeedElement = document.getElementById("statMaxSpeed");
 const difficultyButtons = document.querySelectorAll("[data-difficulty]");
 const directionButtons = document.querySelectorAll("[data-direction]");
 const leaderboardTabs = document.querySelectorAll("[data-leaderboard-difficulty]");
+const scopeButtons = document.querySelectorAll("[data-scope]");
 
 const WIDTH = 1000;
 const HEIGHT = 800;
@@ -39,6 +40,7 @@ const COUNTDOWN_DURATION = 4000;
 const LEADERBOARD_KEY = "greedySnakeLeaderboardV1";
 const PLAYER_NAME_KEY = "greedySnakePlayerName";
 const MAX_LEADERBOARD_SIZE = 10;
+const API_BASE = ""; // FastAPI 同源托管时留空；前后端分离部署时改为后端地址，如 "http://127.0.0.1:8000"
 
 const DIFFICULTIES = {
     easy: {
@@ -96,6 +98,8 @@ let bestScore = 0;
 let currentPlayerName = "匿名玩家";
 let leaderboards = loadLeaderboards();
 let timerInterval = null;
+let leaderboardScope = "local";   // "local" = 本机榜单，"global" = 全球榜单
+let globalCache = {};             // 按难度缓存全球榜单数据
 
 function createEmptyLeaderboards() {
     return { easy: [], medium: [], hard: [] };
@@ -211,6 +215,8 @@ function recordScore() {
     persistLeaderboards();
     renderLeaderboard();
 
+    submitScoreToCloud(entry);
+
     return { rank, placed };
 }
 
@@ -218,32 +224,65 @@ function formatScore(value) {
     return String(value).padStart(4, "0");
 }
 
-function renderLeaderboard() {
-    const scores = leaderboards[leaderboardDifficulty];
+/* ── 全球排行榜 API ─────────────────────────────── */
+
+async function apiSubmitScore(payload) {
+    try {
+        const res = await fetch(`${API_BASE}/api/scores`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        return res.ok ? await res.json() : null;
+    } catch (error) {
+        return null; // 后端未启动时静默降级为本机榜单
+    }
+}
+
+async function apiFetchLeaderboard(level) {
+    try {
+        const res = await fetch(`${API_BASE}/api/leaderboard/${level}?limit=10`);
+        return res.ok ? await res.json() : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function submitScoreToCloud(entry) {
+    apiSubmitScore({
+        name: entry.name,
+        difficulty,
+        score: entry.score,
+        duration_seconds: Math.round(getGameDuration() / 1000),
+        food_eaten: foodEaten,
+        moves: moveCount
+    }).then(result => {
+        if (result) {
+            globalCache = {}; // 有新成绩入库，下次查看全球榜单时重新拉取
+            if (leaderboardScope === "global") renderLeaderboard();
+        }
+    });
+}
+
+function renderLeaderboardRows(items, emptyTitle, emptyHint) {
     leaderboardListElement.replaceChildren();
 
-    leaderboardTabs.forEach(tab => {
-        const selected = tab.dataset.leaderboardDifficulty === leaderboardDifficulty;
-        tab.classList.toggle("active", selected);
-        tab.setAttribute("aria-selected", String(selected));
-    });
-
-    if (scores.length === 0) {
+    if (!items || items.length === 0) {
         const empty = document.createElement("li");
         empty.className = "emptyLeaderboard";
 
         const title = document.createElement("strong");
-        title.textContent = "等待首位挑战者";
+        title.textContent = emptyTitle;
 
         const hint = document.createElement("span");
-        hint.textContent = "完成一局游戏即可留下成绩";
+        hint.textContent = emptyHint;
 
         empty.append(title, hint);
         leaderboardListElement.append(empty);
         return;
     }
 
-    scores.forEach((entry, index) => {
+    items.forEach((entry, index) => {
         const row = document.createElement("li");
         row.className = "leaderboardRow";
 
@@ -263,6 +302,44 @@ function renderLeaderboard() {
         row.append(rank, name, points);
         leaderboardListElement.append(row);
     });
+}
+
+async function renderLeaderboard() {
+    leaderboardTabs.forEach(tab => {
+        const selected = tab.dataset.leaderboardDifficulty === leaderboardDifficulty;
+        tab.classList.toggle("active", selected);
+        tab.setAttribute("aria-selected", String(selected));
+    });
+
+    scopeButtons.forEach(button => {
+        button.classList.toggle("active", button.dataset.scope === leaderboardScope);
+    });
+
+    if (leaderboardScope === "local") {
+        renderLeaderboardRows(
+            leaderboards[leaderboardDifficulty],
+            "等待首位挑战者",
+            "完成一局游戏即可留下成绩"
+        );
+        return;
+    }
+
+    const level = leaderboardDifficulty;
+    renderLeaderboardRows(null, "全球榜单加载中…", "正在连接服务器");
+
+    if (!(level in globalCache)) {
+        globalCache[level] = await apiFetchLeaderboard(level);
+    }
+
+    const rows = globalCache[level];
+
+    if (rows === null) {
+        delete globalCache[level];
+        renderLeaderboardRows([], "无法连接榜单服务器", "请确认后端已启动，切换标签后重试");
+        return;
+    }
+
+    renderLeaderboardRows(rows, "云端还没有成绩", "完成一局游戏，抢占全球第一！");
 }
 
 function selectLeaderboard(level) {
@@ -492,6 +569,14 @@ difficultyButtons.forEach(button => {
 
 leaderboardTabs.forEach(tab => {
     tab.addEventListener("click", () => selectLeaderboard(tab.dataset.leaderboardDifficulty));
+});
+
+scopeButtons.forEach(button => {
+    button.addEventListener("click", () => {
+        if (leaderboardScope === button.dataset.scope) return;
+        leaderboardScope = button.dataset.scope;
+        renderLeaderboard();
+    });
 });
 
 directionButtons.forEach(button => {

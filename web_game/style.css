@@ -352,6 +352,34 @@ button{
     color:#061009;
 }
 
+.scopeToggle{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:6px;
+    margin-bottom:10px;
+}
+
+.scopeBtn{
+    padding:7px 5px;
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--dim);
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:1px;
+    cursor:pointer;
+}
+
+.scopeBtn:hover,
+.scopeBtn.active{
+    border-color:var(--green);
+    color:var(--green);
+}
+
+.scopeBtn.active{
+    background:rgba(105,244,154,.12);
+}
+
 .leaderboardList{
     min-height:282px;
     max-height:282px;

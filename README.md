@@ -64,6 +64,38 @@ python -m http.server 8080
 - **原生 JavaScript** — 游戏逻辑（无框架依赖）
 - **CSS3** — 暗色主题 UI + 响应式布局
 - **localStorage** — 本地数据持久化（排行榜 / 玩家昵称）
+- **FastAPI + MySQL** — 全球排行榜后端（可选）
+
+## 🧩 后端：全球排行榜（可选）
+
+开启后端后，排行榜面板可切换"本机 / 全球"：成绩提交到 MySQL，所有玩家共享一个榜单。不启动后端时游戏自动降级为纯本机模式。
+
+### 1. 准备数据库
+
+```sql
+CREATE DATABASE greedy_snake CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+### 2. 安装依赖并启动
+
+```bash
+pip install -r backend/requirements.txt
+
+# MySQL 有密码时先设置环境变量（PowerShell）
+$env:DATABASE_URL = "mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"
+
+# 在项目根目录启动（同时托管前端页面）
+uvicorn backend.main:app --reload
+```
+
+### 3. 访问
+
+| 地址 | 说明 |
+|------|------|
+| http://127.0.0.1:8000/ | 游戏首页（FastAPI 托管） |
+| http://127.0.0.1:8000/docs | API 交互式文档 |
+| `GET /api/leaderboard/{difficulty}` | 全球 Top 10 |
+| `POST /api/scores` | 提交成绩 |
 
 ## 📄 License
 

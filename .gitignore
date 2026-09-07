@@ -1,3 +1,7 @@
 .idea/
 .sites-build/
+__pycache__/
+*.pyc
+.env
 
+.vscode/
