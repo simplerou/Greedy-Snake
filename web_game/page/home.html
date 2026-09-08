@@ -6,10 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#07100b">
     <title>Greedy Snake · 经典贪吃蛇</title>
-    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../style.css?v=20260908-auth-ui">
 </head>
 
-<body>
+<body class="authPending">
+
+<div class="authGate" id="authGate" role="status" aria-live="polite">
+    <span class="authGateMark">●</span>
+    <strong>正在验证玩家账号</strong>
+    <small>AUTHENTICATING...</small>
+</div>
 
 <main id="mainMenu">
     <section class="menuShell" aria-labelledby="gameTitle">
@@ -20,10 +26,10 @@
                 <p class="menuSubtitle">选择难度，刷新你的最佳排名</p>
             </div>
 
-            <label class="playerField" for="playerName">
-                <span>PLAYER</span>
-                <input id="playerName" maxlength="12" autocomplete="nickname" placeholder="输入玩家昵称">
-            </label>
+            <div class="currentUserCard" aria-label="当前登录用户">
+                <span class="currentUserLabel"><i aria-hidden="true"></i> CURRENT USER</span>
+                <strong id="currentUserName">--</strong>
+            </div>
         </header>
 
         <div class="menuLayout">
@@ -177,7 +183,7 @@
     </section>
 </main>
 
-<script src="../snake.js"></script>
+<script src="../snake.js?v=20260908-auth-ui"></script>
 
 </body>
 </html>

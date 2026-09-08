@@ -13,11 +13,14 @@
 """
 import os
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, text
 
-from database import DATABASE_URL
+try:
+    from .database import DATABASE_URL
+except ImportError:
+    from database import DATABASE_URL
 
 
 def main() -> None:
@@ -57,7 +60,10 @@ def main() -> None:
 
     # 3. 建表
     try:
-        from database import init_db
+        try:
+            from .database import init_db
+        except ImportError:
+            from database import init_db
 
         init_db()
         print("[3/3] 数据表创建完成（scores）")
@@ -72,14 +78,15 @@ def main() -> None:
 
 def mask_password(url: str) -> str:
     """隐藏连接串里的密码，避免打印到控制台。"""
-    if "@" not in url:
+    parts = urlsplit(url)
+    if parts.password is None:
         return url
-    scheme_and_user, _, rest = url.partition("@")
-    if ":" in scheme_and_user:
-        prefix, _, _ = scheme_and_user.partition(":")
-        user = scheme_and_user.split("//", 1)[-1].split(":", 1)[0]
-        return f"{prefix}//{user}:***@{rest}"
-    return url
+
+    username = parts.username or ""
+    hostname = parts.hostname or ""
+    port = f":{parts.port}" if parts.port else ""
+    masked_netloc = f"{username}:***@{hostname}{port}"
+    return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
 
 
 if __name__ == "__main__":

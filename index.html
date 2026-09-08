@@ -39,6 +39,261 @@
             overflow-x: hidden;
         }
 
+        button,
+        input {
+            font: inherit;
+        }
+
+        /* 顶部账号入口 */
+        .accountBar {
+            position: absolute;
+            z-index: 10;
+            top: 24px;
+            right: 28px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .accountButton {
+            min-width: 78px;
+            height: 38px;
+            padding: 0 18px;
+            border: 1px solid var(--line);
+            background: rgba(11, 16, 13, .78);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            transition: border-color .2s ease, color .2s ease, background .2s ease, transform .2s ease;
+        }
+
+        .accountButton:hover,
+        .accountButton:focus-visible {
+            border-color: var(--green);
+            color: var(--text);
+            outline: none;
+            transform: translateY(-2px);
+        }
+
+        .accountButton.primary {
+            border-color: var(--green);
+            background: var(--green);
+            color: #061009;
+            box-shadow: 0 0 24px rgba(105, 244, 154, .15);
+        }
+
+        .accountButton.primary:hover,
+        .accountButton.primary:focus-visible {
+            background: #8affad;
+            color: #061009;
+        }
+
+        .accountUser {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            height: 38px;
+            padding-left: 14px;
+            border: 1px solid var(--line);
+            background: rgba(11, 16, 13, .82);
+            backdrop-filter: blur(12px);
+        }
+
+        .accountUser[hidden] {
+            display: none;
+        }
+
+        .accountUserName {
+            max-width: 130px;
+            overflow: hidden;
+            color: var(--green);
+            font-size: 12px;
+            font-weight: 800;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .logoutButton {
+            align-self: stretch;
+            padding: 0 12px;
+            border: 0;
+            border-left: 1px solid var(--line);
+            background: transparent;
+            color: var(--dim);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .logoutButton:hover,
+        .logoutButton:focus-visible {
+            color: var(--text);
+            outline: none;
+        }
+
+        .authDialog {
+            width: min(430px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            margin: auto;
+            padding: 0;
+            overflow: auto;
+            border: 1px solid #3d4c42;
+            background: #0b100d;
+            color: var(--text);
+            box-shadow: 0 30px 100px rgba(0, 0, 0, .8), 0 0 45px rgba(105, 244, 154, .08);
+        }
+
+        .authDialog::backdrop {
+            background: rgba(2, 5, 3, .78);
+            backdrop-filter: blur(8px);
+        }
+
+        .authPanel {
+            position: relative;
+            padding: 34px;
+            background:
+                linear-gradient(145deg, rgba(105, 244, 154, .07), transparent 40%),
+                linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+            background-size: auto, 24px 24px, 24px 24px;
+        }
+
+        .authClose {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 34px;
+            height: 34px;
+            border: 1px solid var(--line);
+            background: rgba(5, 8, 7, .7);
+            color: var(--muted);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .authClose:hover,
+        .authClose:focus-visible {
+            border-color: var(--green);
+            color: var(--text);
+            outline: none;
+        }
+
+        .authKicker {
+            color: var(--green);
+            font-family: Consolas, monospace;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 2.5px;
+        }
+
+        .authPanel h2 {
+            margin-top: 10px;
+            font-size: 30px;
+            letter-spacing: -1px;
+        }
+
+        .authIntro {
+            margin: 8px 0 24px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .authTabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            margin-bottom: 22px;
+            border: 1px solid var(--line);
+        }
+
+        .authTab {
+            height: 40px;
+            border: 0;
+            background: transparent;
+            color: var(--dim);
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .authTab.active {
+            background: var(--green);
+            color: #061009;
+        }
+
+        .authForm {
+            display: grid;
+            gap: 15px;
+        }
+
+        .authForm[hidden] {
+            display: none;
+        }
+
+        .authField {
+            display: grid;
+            gap: 7px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .authField input {
+            width: 100%;
+            height: 46px;
+            padding: 0 13px;
+            border: 1px solid var(--line);
+            border-radius: 0;
+            outline: none;
+            background: rgba(4, 8, 6, .85);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0;
+        }
+
+        .authField input:focus {
+            border-color: var(--green);
+            box-shadow: 0 0 0 3px rgba(105, 244, 154, .08);
+        }
+
+        .authField input::placeholder {
+            color: #526058;
+        }
+
+        .authSubmit {
+            height: 48px;
+            margin-top: 5px;
+            border: 1px solid var(--green);
+            background: var(--green);
+            color: #061009;
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        .authSubmit:hover,
+        .authSubmit:focus-visible {
+            background: #8affad;
+            outline: none;
+        }
+
+        .authStatus {
+            min-height: 20px;
+            margin-top: 16px;
+            color: var(--yellow);
+            font-size: 11px;
+            line-height: 1.7;
+        }
+
+        body:has(.authDialog[open]) {
+            overflow: hidden;
+        }
+
         /* ════════════════════════════════
            背景：AI 贪吃蛇演示 + 氛围层
            ════════════════════════════════ */
@@ -561,6 +816,23 @@
         }
 
         @media (max-width: 560px) {
+            .accountBar {
+                top: 14px;
+                right: 14px;
+                gap: 7px;
+            }
+
+            .accountButton {
+                min-width: 64px;
+                height: 34px;
+                padding: 0 12px;
+                font-size: 11px;
+            }
+
+            .authPanel {
+                padding: 30px 22px 24px;
+            }
+
             .hero h1 {
                 letter-spacing: -2px;
             }
@@ -606,6 +878,63 @@
 <div class="scanlines" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 
+<nav class="accountBar" aria-label="账号操作">
+    <button class="accountButton guestAccountAction" type="button" data-auth-open="login">登录</button>
+    <button class="accountButton primary guestAccountAction" type="button" data-auth-open="register">注册</button>
+    <div class="accountUser" id="accountUser" hidden>
+        <span class="accountUserName" id="accountUserName"></span>
+        <button class="logoutButton" id="logoutButton" type="button">退出</button>
+    </div>
+</nav>
+
+<dialog class="authDialog" id="authDialog" aria-labelledby="authTitle">
+    <section class="authPanel">
+        <button class="authClose" id="authClose" type="button" aria-label="关闭登录窗口">×</button>
+        <p class="authKicker">PLAYER ACCOUNT</p>
+        <h2 id="authTitle">欢迎回来</h2>
+        <p class="authIntro" id="authIntro">登录后即可在不同设备继续挑战。</p>
+
+        <div class="authTabs" role="tablist" aria-label="登录或注册">
+            <button class="authTab active" type="button" role="tab" aria-selected="true" data-auth-tab="login">登录</button>
+            <button class="authTab" type="button" role="tab" aria-selected="false" data-auth-tab="register">注册</button>
+        </div>
+
+        <form class="authForm" id="loginForm" data-auth-form="login">
+            <label class="authField">
+                邮箱
+                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+            </label>
+            <label class="authField">
+                密码
+                <input name="password" type="password" autocomplete="current-password" minlength="8" placeholder="请输入至少 8 位密码" required>
+            </label>
+            <button class="authSubmit" type="submit">进入游戏账号 →</button>
+        </form>
+
+        <form class="authForm" id="registerForm" data-auth-form="register" hidden>
+            <label class="authField">
+                玩家昵称
+                <input name="nickname" type="text" autocomplete="nickname" maxlength="12" placeholder="最多 12 个字符" required>
+            </label>
+            <label class="authField">
+                邮箱
+                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+            </label>
+            <label class="authField">
+                密码
+                <input name="password" type="password" autocomplete="new-password" minlength="8" placeholder="请输入至少 8 位密码" required>
+            </label>
+            <label class="authField">
+                确认密码
+                <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="再次输入密码" required>
+            </label>
+            <button class="authSubmit" type="submit">创建玩家账号 →</button>
+        </form>
+
+        <p class="authStatus" id="authStatus" role="status" aria-live="polite"></p>
+    </section>
+</dialog>
+
 <!-- Hero -->
 <main class="hero">
     <p class="eyebrow"><i></i> CLASSIC ARCADE · 2026</p>
@@ -613,7 +942,7 @@
     <p class="tagline">吃掉每一颗食物，躲开障碍与自己的尾巴——<strong>刷新你的本机最佳排名</strong>。</p>
 
     <div class="ctaRow">
-        <a class="cta" href="web_game/page/home.html">▶ 开始游戏 <span class="arrow">→</span></a>
+        <a class="cta" id="startGameLink" href="web_game/page/home.html">▶ 开始游戏 <span class="arrow">→</span></a>
         <a class="ctaGhost" href="#difficulty">查看难度</a>
     </div>
 
@@ -896,6 +1225,238 @@
         } else {
             requestAnimationFrame(loop);
         }
+    })();
+
+    /* 登录 / 注册 */
+    (function () {
+        const API_BASE = "";
+        const AUTH_TOKEN_KEY = "greedySnakeAuthToken";
+        const PLAYER_NAME_KEY = "greedySnakePlayerName";
+        const dialog = document.getElementById("authDialog");
+        const title = document.getElementById("authTitle");
+        const intro = document.getElementById("authIntro");
+        const status = document.getElementById("authStatus");
+        const tabs = document.querySelectorAll("[data-auth-tab]");
+        const forms = document.querySelectorAll("[data-auth-form]");
+        const guestActions = document.querySelectorAll(".guestAccountAction");
+        const accountUser = document.getElementById("accountUser");
+        const accountUserName = document.getElementById("accountUserName");
+        const startGameLink = document.getElementById("startGameLink");
+        let authenticated = false;
+        let continueToGame = new URLSearchParams(window.location.search).get("login") === "required";
+
+        function getToken() {
+            try {
+                return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        function saveToken(token) {
+            try {
+                if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+                else localStorage.removeItem(AUTH_TOKEN_KEY);
+            } catch (error) {
+                // 当前会话仍可继续，刷新页面后需要重新登录。
+            }
+        }
+
+        function showAccount(user) {
+            authenticated = Boolean(user);
+            guestActions.forEach(button => { button.hidden = Boolean(user); });
+            accountUser.hidden = !user;
+            accountUserName.textContent = user ? `● ${user.nickname}` : "";
+            accountUserName.title = user ? user.email : "";
+
+            if (user) {
+                try {
+                    localStorage.setItem(PLAYER_NAME_KEY, user.nickname);
+                } catch (error) {
+                    // 昵称同步失败不影响登录。
+                }
+            }
+        }
+
+        async function authRequest(path, options = {}) {
+            const response = await fetch(`${API_BASE}${path}`, options);
+            let body = null;
+            try {
+                body = await response.json();
+            } catch (error) {
+                body = null;
+            }
+
+            if (!response.ok) {
+                throw new Error(body?.detail || "账号服务暂时不可用");
+            }
+            return body;
+        }
+
+        function setSubmitting(form, submitting) {
+            const button = form.querySelector("button[type='submit']");
+            button.disabled = submitting;
+            button.textContent = submitting
+                ? "正在连接..."
+                : form.id === "loginForm" ? "进入游戏账号 →" : "创建玩家账号 →";
+        }
+
+        function openAuth(mode) {
+            selectMode(mode);
+            if (!dialog.open) dialog.showModal();
+        }
+
+        function selectMode(mode) {
+            const isLogin = mode === "login";
+            title.textContent = isLogin ? "欢迎回来" : "创建玩家账号";
+            intro.textContent = isLogin
+                ? "登录后即可在不同设备继续挑战。"
+                : "注册账号，保留昵称与全球排行榜记录。";
+            status.textContent = "";
+
+            tabs.forEach(tab => {
+                const selected = tab.dataset.authTab === mode;
+                tab.classList.toggle("active", selected);
+                tab.setAttribute("aria-selected", String(selected));
+            });
+
+            forms.forEach(form => {
+                form.hidden = form.dataset.authForm !== mode;
+            });
+
+            const activeForm = document.querySelector(`[data-auth-form="${mode}"]`);
+            window.setTimeout(() => activeForm.querySelector("input").focus(), 0);
+        }
+
+        document.querySelectorAll("[data-auth-open]").forEach(button => {
+            button.addEventListener("click", () => {
+                continueToGame = false;
+                openAuth(button.dataset.authOpen);
+            });
+        });
+
+        startGameLink.addEventListener("click", event => {
+            if (authenticated) return;
+            event.preventDefault();
+            continueToGame = true;
+            openAuth("login");
+        });
+
+        tabs.forEach(tab => {
+            tab.addEventListener("click", () => selectMode(tab.dataset.authTab));
+        });
+
+        document.getElementById("authClose").addEventListener("click", () => dialog.close());
+
+        dialog.addEventListener("click", event => {
+            if (event.target === dialog) dialog.close();
+        });
+
+        document.getElementById("loginForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            setSubmitting(form, true);
+            status.textContent = "";
+
+            try {
+                const result = await authRequest("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: data.get("email"),
+                        password: data.get("password")
+                    })
+                });
+                saveToken(result.token);
+                showAccount(result.user);
+                form.reset();
+                dialog.close();
+                if (continueToGame) window.location.href = startGameLink.href;
+            } catch (error) {
+                status.textContent = error.message === "Failed to fetch"
+                    ? "无法连接账号服务，请确认 FastAPI 和 MySQL 已启动。"
+                    : error.message;
+            } finally {
+                setSubmitting(form, false);
+            }
+        });
+
+        document.getElementById("registerForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(event.currentTarget);
+
+            if (data.get("password") !== data.get("confirmPassword")) {
+                status.textContent = "两次输入的密码不一致，请重新确认。";
+                return;
+            }
+
+            setSubmitting(form, true);
+            status.textContent = "";
+
+            try {
+                const result = await authRequest("/api/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        nickname: data.get("nickname"),
+                        email: data.get("email"),
+                        password: data.get("password")
+                    })
+                });
+                saveToken(result.token);
+                showAccount(result.user);
+                form.reset();
+                dialog.close();
+                if (continueToGame) window.location.href = startGameLink.href;
+            } catch (error) {
+                status.textContent = error.message === "Failed to fetch"
+                    ? "无法连接账号服务，请确认 FastAPI 和 MySQL 已启动。"
+                    : error.message;
+            } finally {
+                setSubmitting(form, false);
+            }
+        });
+
+        document.getElementById("logoutButton").addEventListener("click", async () => {
+            const token = getToken();
+            try {
+                if (token) {
+                    await authRequest("/api/auth/logout", {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                }
+            } catch (error) {
+                // 即使服务离线，也清除浏览器中的失效登录状态。
+            } finally {
+                saveToken("");
+                showAccount(null);
+            }
+        });
+
+        async function restoreAccount() {
+            const token = getToken();
+            if (!token) return;
+
+            try {
+                const user = await authRequest("/api/auth/me", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                showAccount(user);
+                if (continueToGame) window.location.href = startGameLink.href;
+            } catch (error) {
+                saveToken("");
+                showAccount(null);
+            }
+        }
+
+        if (continueToGame) {
+            window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+            openAuth("login");
+        }
+        restoreAccount();
     })();
 
     /* ════════════════════════════════

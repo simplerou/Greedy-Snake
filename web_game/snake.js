@@ -9,7 +9,7 @@ const mainMenuElement = document.getElementById("mainMenu");
 const gameScreenElement = document.getElementById("gameScreen");
 const currentDifficultyElement = document.getElementById("currentDifficulty");
 const backToMenuElement = document.getElementById("backToMenu");
-const playerNameElement = document.getElementById("playerName");
+const currentUserNameElement = document.getElementById("currentUserName");
 const leaderboardListElement = document.getElementById("leaderboardList");
 const resultOverlayElement = document.getElementById("resultOverlay");
 const resultScoreElement = document.getElementById("resultScore");
@@ -38,9 +38,45 @@ const BLOCK = 20;
 const START_SAFE_RADIUS = 5;
 const COUNTDOWN_DURATION = 4000;
 const LEADERBOARD_KEY = "greedySnakeLeaderboardV1";
-const PLAYER_NAME_KEY = "greedySnakePlayerName";
 const MAX_LEADERBOARD_SIZE = 10;
 const API_BASE = ""; // FastAPI 同源托管时留空；前后端分离部署时改为后端地址，如 "http://127.0.0.1:8000"
+const AUTH_TOKEN_KEY = "greedySnakeAuthToken";
+
+function getAuthToken() {
+    try {
+        return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+    } catch (error) {
+        return "";
+    }
+}
+
+async function requireAuthentication() {
+    const token = getAuthToken();
+    if (!token) {
+        window.location.replace("../../?login=required");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error("unauthorized");
+
+        const user = await response.json();
+        currentPlayerName = normalizePlayerName(user.nickname);
+        currentUserNameElement.textContent = currentPlayerName;
+        currentUserNameElement.title = user.email;
+        document.body.classList.remove("authPending");
+    } catch (error) {
+        try {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+        } catch (storageError) {
+            // 即使浏览器拒绝存储操作，也返回登录页面。
+        }
+        window.location.replace("../../?login=required");
+    }
+}
 
 const DIFFICULTIES = {
     easy: {
@@ -230,7 +266,10 @@ async function apiSubmitScore(payload) {
     try {
         const res = await fetch(`${API_BASE}/api/scores`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${getAuthToken()}`
+            },
             body: JSON.stringify(payload)
         });
         return res.ok ? await res.json() : null;
@@ -439,14 +478,6 @@ function createObstacles() {
 
 function startGame(selectedDifficulty) {
     difficulty = selectedDifficulty;
-    currentPlayerName = normalizePlayerName(playerNameElement.value);
-    playerNameElement.value = currentPlayerName;
-
-    try {
-        localStorage.setItem(PLAYER_NAME_KEY, currentPlayerName);
-    } catch (error) {
-        // 昵称仍会用于当前会话。
-    }
 
     const settings = DIFFICULTIES[difficulty];
     currentDifficultyElement.textContent = `${settings.name} · ${settings.englishName}`;
@@ -584,10 +615,6 @@ directionButtons.forEach(button => {
         event.preventDefault();
         changeDirection(button.dataset.direction);
     });
-});
-
-playerNameElement.addEventListener("change", () => {
-    playerNameElement.value = normalizePlayerName(playerNameElement.value);
 });
 
 backToMenuElement.addEventListener("click", showMainMenu);
@@ -807,12 +834,7 @@ function gameLoop() {
 }
 
 migrateLegacyBestScores();
-
-try {
-    playerNameElement.value = localStorage.getItem(PLAYER_NAME_KEY) || "";
-} catch (error) {
-    playerNameElement.value = "";
-}
+requireAuthentication();
 
 renderLeaderboard();
 gameLoop();

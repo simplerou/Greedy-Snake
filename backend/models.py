@@ -1,7 +1,7 @@
-"""成绩表模型。"""
+"""Greedy Snake 数据库模型。"""
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -24,3 +24,29 @@ class Score(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
+
+
+class User(Base):
+    """玩家账号；数据库中只保存密码哈希，不保存明文密码。"""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nickname: Mapped[str] = mapped_column(String(12), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AuthSession(Base):
+    """登录会话；只保存令牌摘要，数据库泄露时令牌不能被直接使用。"""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
