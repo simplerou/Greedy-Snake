@@ -3,3 +3,5 @@ uvicorn[standard]>=0.29
 SQLAlchemy>=2.0
 PyMySQL>=1.1
 cryptography>=42
+python-dotenv>=1.0
+certifi>=2024.2.2
