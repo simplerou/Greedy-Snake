@@ -264,6 +264,48 @@
             color: #526058;
         }
 
+        /* ── 注册密码强度检测 ── */
+        .pwStrength {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-top: -8px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: var(--muted);
+        }
+
+        .pwStrength.on {
+            display: flex;
+        }
+
+        .pwStrengthBars {
+            display: flex;
+            gap: 5px;
+            flex: 1;
+        }
+
+        .pwStrengthBars i {
+            flex: 1;
+            height: 3px;
+            background: #1c231f;
+            transition: background .25s ease;
+        }
+
+        .pwStrengthText {
+            min-width: 88px;
+            text-align: right;
+        }
+
+        .pwStrength[data-level="1"] .pwStrengthText { color: var(--red); }
+        .pwStrength[data-level="2"] .pwStrengthText { color: var(--yellow); }
+        .pwStrength[data-level="3"] .pwStrengthText { color: var(--green); }
+
+        .pwStrength[data-level="1"] .pwStrengthBars i:nth-child(-n+1) { background: var(--red); }
+        .pwStrength[data-level="2"] .pwStrengthBars i:nth-child(-n+2) { background: var(--yellow); }
+        .pwStrength[data-level="3"] .pwStrengthBars i:nth-child(-n+3) { background: var(--green); }
+
         .authSubmit {
             height: 48px;
             margin-top: 5px;
@@ -908,7 +950,7 @@
                 密码
                 <input name="password" type="password" autocomplete="current-password" minlength="8" placeholder="请输入至少 8 位密码" required>
             </label>
-            <button class="authSubmit" type="submit">进入游戏账号 →</button>
+            <button class="authSubmit" type="submit">进入游戏 →</button>
         </form>
 
         <form class="authForm" id="registerForm" data-auth-form="register" hidden>
@@ -924,6 +966,10 @@
                 密码
                 <input name="password" type="password" autocomplete="new-password" minlength="8" placeholder="请输入至少 8 位密码" required>
             </label>
+            <span class="pwStrength" id="pwStrength" data-level="0" aria-live="polite">
+                <span class="pwStrengthBars" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="pwStrengthText" id="pwStrengthText"></span>
+            </span>
             <label class="authField">
                 确认密码
                 <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="再次输入密码" required>
@@ -1381,6 +1427,62 @@
                 setSubmitting(form, false);
             }
         });
+
+        // ── 注册密码强度检测（弱 / 较强 / 强）──────────────
+        (function initPasswordStrength() {
+            const form = document.getElementById("registerForm");
+            const input = form && form.querySelector('input[name="password"]');
+            const meter = document.getElementById("pwStrength");
+            const text = document.getElementById("pwStrengthText");
+            if (!form || !input || !meter || !text) return;
+
+            const COMMON_WORDS = ["password", "passwd", "12345678", "123456789", "qwerty", "1qaz", "asdf", "zxcv", "abc123", "a123456", "aa123456", "5201314", "woaini"];
+            const SEQUENCES = ["1234", "2345", "3456", "4567", "5678", "6789", "abcd", "bcde", "cdef", "qwer", "wert", "asdf"];
+
+            function passwordLevel(value) {
+                if (value.length < 8) return 0;
+
+                let score = 0;
+                if (/[a-z]/.test(value)) score += 1;
+                if (/[A-Z]/.test(value)) score += 1;
+                if (/[0-9]/.test(value)) score += 1;
+                if (/[^A-Za-z0-9]/.test(value)) score += 1;
+                if (value.length >= 10) score += 1;
+                if (value.length >= 13) score += 1;
+
+                const lower = value.toLowerCase();
+                const tooPredictable = COMMON_WORDS.some(word => lower.includes(word))
+                    || SEQUENCES.some(seq => lower.includes(seq))
+                    || /^(.)\1+$/.test(value);
+
+                if (tooPredictable) score = Math.min(score, 2);
+
+                if (score <= 2) return 1;   // 弱
+                if (score <= 4) return 2;   // 较强
+                return 3;                    // 强
+            }
+
+            const LABELS = { 0: "太短 · 至少 8 位", 1: "弱", 2: "较强", 3: "强" };
+
+            input.addEventListener("input", () => {
+                const value = input.value;
+                meter.classList.toggle("on", value.length > 0);
+                if (!value) {
+                    text.textContent = "";
+                    meter.dataset.level = "0";
+                    return;
+                }
+                const level = passwordLevel(value);
+                meter.dataset.level = String(level);
+                text.textContent = LABELS[level];
+            });
+
+            form.addEventListener("reset", () => {
+                meter.classList.remove("on");
+                meter.dataset.level = "0";
+                text.textContent = "";
+            });
+        })();
 
         document.getElementById("registerForm").addEventListener("submit", async event => {
             event.preventDefault();
