@@ -21,7 +21,7 @@ from typing import Literal
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -74,9 +74,15 @@ class ScoreOut(BaseModel):
 
 
 class RegisterIn(BaseModel):
-    nickname: str = Field(min_length=1, max_length=12)
+    # 长度上限在去掉首尾空格之后校验，否则"  合法昵称  "会被误判超长
+    nickname: str = Field(max_length=MAX_NAME_LEN)
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def strip_nickname(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class LoginIn(BaseModel):
@@ -187,9 +193,12 @@ def health() -> dict:
 
 @app.post("/api/auth/register", response_model=AuthOut, status_code=201)
 def register(payload: RegisterIn) -> AuthOut:
-    nickname = payload.nickname.strip()
+    nickname = payload.nickname
     if not nickname:
-        raise HTTPException(status_code=422, detail="昵称不能为空")
+        raise HTTPException(status_code=422, detail="昵称不能为空或全是空格")
+    if not payload.password.strip():
+        # 空格也算字符，只按长度校验会让整串空格的密码通过
+        raise HTTPException(status_code=422, detail="密码不能全是空格")
     email = normalize_email(payload.email)
 
     with SessionLocal() as session:

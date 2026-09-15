@@ -956,7 +956,7 @@
         <form class="authForm" id="registerForm" data-auth-form="register" hidden>
             <label class="authField">
                 玩家昵称
-                <input name="nickname" type="text" autocomplete="nickname" maxlength="12" placeholder="最多 12 个字符" required>
+                <input name="nickname" type="text" autocomplete="nickname" maxlength="12" pattern=".*\S.*" title="昵称不能全是空格" placeholder="最多 12 个字符" required>
             </label>
             <label class="authField">
                 邮箱
@@ -964,7 +964,7 @@
             </label>
             <label class="authField">
                 密码
-                <input name="password" type="password" autocomplete="new-password" minlength="8" placeholder="请输入至少 8 位密码" required>
+                <input name="password" type="password" autocomplete="new-password" minlength="8" pattern=".*\S.*" title="密码不能全是空格" placeholder="请输入至少 8 位密码" required>
             </label>
             <span class="pwStrength" id="pwStrength" data-level="0" aria-live="polite">
                 <span class="pwStrengthBars" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -1324,6 +1324,25 @@
             }
         }
 
+        const FIELD_LABELS = { nickname: "昵称", email: "邮箱", password: "密码" };
+
+        // 后端校验失败时 detail 是数组，需转成可读文案，否则界面会显示 [object Object]
+        function describeAuthError(detail) {
+            if (!Array.isArray(detail)) return detail;
+
+            return detail.map(item => {
+                const field = Array.isArray(item?.loc) ? item.loc[item.loc.length - 1] : "";
+                const label = FIELD_LABELS[field] || "输入内容";
+                switch (item?.type) {
+                    case "missing": return `请填写${label}`;
+                    case "string_too_short": return `${label}长度不足`;
+                    case "string_too_long": return `${label}超出长度限制`;
+                    case "value_error": return `${label}格式不正确`;
+                    default: return `${label}校验未通过`;
+                }
+            }).join("；");
+        }
+
         async function authRequest(path, options = {}) {
             const response = await fetch(`${API_BASE}${path}`, options);
             let body = null;
@@ -1334,7 +1353,7 @@
             }
 
             if (!response.ok) {
-                throw new Error(body?.detail || "账号服务暂时不可用");
+                throw new Error(describeAuthError(body?.detail) || "账号服务暂时不可用");
             }
             return body;
         }
@@ -1466,10 +1485,17 @@
 
             input.addEventListener("input", () => {
                 const value = input.value;
-                meter.classList.toggle("on", value.length > 0);
                 if (!value) {
-                    text.textContent = "";
+                    meter.classList.remove("on");
                     meter.dataset.level = "0";
+                    text.textContent = "";
+                    return;
+                }
+                meter.classList.add("on");
+                if (!value.trim()) {
+                    // 纯空格：长度够也不算有效密码
+                    meter.dataset.level = "0";
+                    text.textContent = "不能全是空格";
                     return;
                 }
                 const level = passwordLevel(value);
@@ -1489,7 +1515,19 @@
             const form = event.currentTarget;
             const data = new FormData(event.currentTarget);
 
-            if (data.get("password") !== data.get("confirmPassword")) {
+            const nickname = (data.get("nickname") || "").trim();
+            if (!nickname) {
+                status.textContent = "昵称不能全是空格，请输入可识别的名字。";
+                return;
+            }
+
+            const password = data.get("password") || "";
+            if (!password.trim()) {
+                status.textContent = "密码不能全是空格，请输入有效密码。";
+                return;
+            }
+
+            if (password !== data.get("confirmPassword")) {
                 status.textContent = "两次输入的密码不一致，请重新确认。";
                 return;
             }
@@ -1502,9 +1540,9 @@
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        nickname: data.get("nickname"),
+                        nickname,
                         email: data.get("email"),
-                        password: data.get("password")
+                        password
                     })
                 });
                 saveToken(result.token);
