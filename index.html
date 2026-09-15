@@ -1417,6 +1417,18 @@
             if (event.target === dialog) dialog.close();
         });
 
+        // 关闭弹窗（×、点击遮罩、Esc）时复位两个表单，避免下次打开残留上次输入；
+        // form.reset() 会触发强度检测器自身的 reset 监听，强度条一并复位
+        function resetAuthForms() {
+            forms.forEach(form => {
+                form.reset();
+                setSubmitting(form, false);
+            });
+            status.textContent = "";
+        }
+
+        dialog.addEventListener("close", resetAuthForms);
+
         document.getElementById("loginForm").addEventListener("submit", async event => {
             event.preventDefault();
             const form = event.currentTarget;
