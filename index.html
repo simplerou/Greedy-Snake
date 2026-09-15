@@ -1436,26 +1436,26 @@
             const text = document.getElementById("pwStrengthText");
             if (!form || !input || !meter || !text) return;
 
-            const COMMON_WORDS = ["password", "passwd", "12345678", "123456789", "qwerty", "1qaz", "asdf", "zxcv", "abc123", "a123456", "aa123456", "5201314", "woaini"];
-            const SEQUENCES = ["1234", "2345", "3456", "4567", "5678", "6789", "abcd", "bcde", "cdef", "qwer", "wert", "asdf"];
+            const COMMON_WORDS = ["password", "passwd", "admin", "iloveyou", "qwerty", "qazwsx", "1qaz", "zxcv", "asdf", "abc123", "a123456", "aa123456", "12345678", "123456789", "666666", "888888", "5201314", "woaini"];
+            const SEQUENCES = ["1234", "2345", "3456", "4567", "5678", "6789", "abcd", "bcde", "cdef", "qwer", "wert", "asdf", "qaz", "wsx"];
 
             function passwordLevel(value) {
                 if (value.length < 8) return 0;
 
                 let score = 0;
+                if (value.length >= 10) score += 1;
+                if (value.length >= 14) score += 1;
                 if (/[a-z]/.test(value)) score += 1;
                 if (/[A-Z]/.test(value)) score += 1;
                 if (/[0-9]/.test(value)) score += 1;
                 if (/[^A-Za-z0-9]/.test(value)) score += 1;
-                if (value.length >= 10) score += 1;
-                if (value.length >= 13) score += 1;
 
+                // 可预测的部分只扣分，不再一票降级
                 const lower = value.toLowerCase();
-                const tooPredictable = COMMON_WORDS.some(word => lower.includes(word))
-                    || SEQUENCES.some(seq => lower.includes(seq))
-                    || /^(.)\1+$/.test(value);
-
-                if (tooPredictable) score = Math.min(score, 2);
+                if (COMMON_WORDS.some(word => lower.includes(word))) score -= 3;
+                if (SEQUENCES.some(seq => lower.includes(seq))) score -= 1;
+                if (/^(.)\1+$/.test(value)) score -= 3;
+                score = Math.max(0, score);
 
                 if (score <= 2) return 1;   // 弱
                 if (score <= 4) return 2;   // 较强
