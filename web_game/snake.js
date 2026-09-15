@@ -87,7 +87,8 @@ const DIFFICULTIES = {
         speedUpEvery: 100,
         speedStep: 10,
         minSpeed: 120,
-        obstacleCount: 0,
+        // 固定配方：8 段长度 1 的障碍物（数字为格数）
+        obstacleLengths: [1, 1, 1, 1, 1, 1, 1, 1],
         obstacleMoveEvery: 0
     },
     medium: {
@@ -98,7 +99,8 @@ const DIFFICULTIES = {
         speedUpEvery: 50,
         speedStep: 15,
         minSpeed: 50,
-        obstacleCount: 10,
+        // 固定配方：单格与长条并存，合计 10 格
+        obstacleLengths: [1, 1, 1, 2, 2, 3],
         obstacleMoveEvery: 0
     },
     hard: {
@@ -109,7 +111,9 @@ const DIFFICULTIES = {
         speedUpEvery: 40,
         speedStep: 10,
         minSpeed: 45,
-        obstacleCount: 15,
+        // 长度随机（1 ~ obstacleMaxLength），总格数由 obstacleTotal 控制
+        obstacleTotal: 15,
+        obstacleMaxLength: 3,
         obstacleMoveEvery: 25
     }
 };
@@ -445,35 +449,89 @@ function createFood() {
         };
 
         const overlapsSnake = snake.some(part => part.x === candidate.x && part.y === candidate.y);
-        const overlapsObstacle = obstacles.some(item => item.x === candidate.x && item.y === candidate.y);
 
-        if (!overlapsSnake && !overlapsObstacle) return candidate;
+        if (!overlapsSnake && !isObstacleCell(candidate.x, candidate.y)) return candidate;
     }
 }
 
-function createObstacles() {
-    const list = [];
-    const obstacleCount = DIFFICULTIES[difficulty].obstacleCount;
+/* ── 障碍物：以线段为单位（长度 + 方向），长度 1 即单格障碍 ── */
 
-    while (list.length < obstacleCount) {
-        const candidate = {
-            x: Math.floor(Math.random() * (WIDTH / BLOCK)) * BLOCK,
-            y: Math.floor(Math.random() * (HEIGHT / BLOCK)) * BLOCK
-        };
+// 本局要生成的各段长度：低等/中等用固定配方，高等每次随机
+function buildObstacleLengths() {
+    const settings = DIFFICULTIES[difficulty];
+    if (settings.obstacleLengths) return settings.obstacleLengths.slice();
 
-        const inStartSafeArea =
-            Math.abs(candidate.x - snake[0].x) <= START_SAFE_RADIUS * BLOCK
-            && Math.abs(candidate.y - snake[0].y) <= START_SAFE_RADIUS * BLOCK;
-        const overlapsSnake = snake.some(part => part.x === candidate.x && part.y === candidate.y);
-        const overlapsFood = food.x === candidate.x && food.y === candidate.y;
-        const overlapsList = list.some(item => item.x === candidate.x && item.y === candidate.y);
+    const lengths = [];
+    let remaining = settings.obstacleTotal;
 
-        if (!inStartSafeArea && !overlapsSnake && !overlapsFood && !overlapsList) {
-            list.push(candidate);
-        }
+    while (remaining > 0) {
+        const length = Math.min(remaining, 1 + Math.floor(Math.random() * settings.obstacleMaxLength));
+        lengths.push(length);
+        remaining -= length;
     }
 
-    return list;
+    return lengths;
+}
+
+// 展开成占据的所有格子，供碰撞、食物避让与占位判断复用
+function segmentCells(segment) {
+    const cells = [];
+    for (let index = 0; index < segment.length; index += 1) {
+        cells.push({
+            x: segment.x + (segment.direction === "H" ? index * BLOCK : 0),
+            y: segment.y + (segment.direction === "H" ? 0 : index * BLOCK)
+        });
+    }
+    return cells;
+}
+
+function isObstacleCell(x, y) {
+    return obstacles.some(segment => (
+        segment.direction === "H"
+            ? y === segment.y && x >= segment.x && x < segment.x + segment.length * BLOCK
+            : x === segment.x && y >= segment.y && y < segment.y + segment.length * BLOCK
+    ));
+}
+
+function createObstacles() {
+    const placed = [];
+    const occupied = [];   // 已占用格子；线段必须按格子比对，否则长条之间会重叠
+
+    buildObstacleLengths().forEach(length => {
+        // 随机落点，最多尝试 200 次；极端拥挤时放弃该段，避免死循环
+        for (let attempt = 0; attempt < 200; attempt += 1) {
+            const direction = length === 1 || Math.random() < 0.5 ? "H" : "V";
+            const horizontal = direction === "H";
+            // 起点取值上限要减去自身长度，保证整段落在画布内
+            const maxColumn = WIDTH / BLOCK - (horizontal ? length : 1);
+            const maxRow = HEIGHT / BLOCK - (horizontal ? 1 : length);
+
+            const segment = {
+                x: Math.floor(Math.random() * (maxColumn + 1)) * BLOCK,
+                y: Math.floor(Math.random() * (maxRow + 1)) * BLOCK,
+                length,
+                direction
+            };
+
+            const cells = segmentCells(segment);
+            const inStartSafeArea = cells.some(cell =>
+                Math.abs(cell.x - snake[0].x) <= START_SAFE_RADIUS * BLOCK
+                && Math.abs(cell.y - snake[0].y) <= START_SAFE_RADIUS * BLOCK);
+            const overlapsSnake = cells.some(cell =>
+                snake.some(part => part.x === cell.x && part.y === cell.y));
+            const overlapsFood = cells.some(cell => cell.x === food.x && cell.y === food.y);
+            const overlapsPlaced = cells.some(cell =>
+                occupied.some(item => item.x === cell.x && item.y === cell.y));
+
+            if (!inStartSafeArea && !overlapsSnake && !overlapsFood && !overlapsPlaced) {
+                placed.push(segment);
+                occupied.push(...cells);
+                break;
+            }
+        }
+    });
+
+    return placed;
 }
 
 function startGame(selectedDifficulty) {
@@ -732,7 +790,7 @@ function update() {
 
     const hitWall = head.x < 0 || head.x >= WIDTH || head.y < 0 || head.y >= HEIGHT;
     const hitSelf = snake.slice(1).some(part => part.x === head.x && part.y === head.y);
-    const hitObstacle = obstacles.some(item => item.x === head.x && item.y === head.y);
+    const hitObstacle = isObstacleCell(head.x, head.y);
 
     if (hitWall || hitSelf || hitObstacle) {
         finishGame();
@@ -792,8 +850,11 @@ function draw() {
     }
 
     ctx.fillStyle = "#667169";
-    obstacles.forEach(item => {
-        ctx.fillRect(item.x + 2, item.y + 2, BLOCK - 4, BLOCK - 4);
+    obstacles.forEach(segment => {
+        // 整段画成一个矩形，长条与单格在视觉上是连续的一条
+        const width = segment.direction === "H" ? segment.length * BLOCK - 4 : BLOCK - 4;
+        const height = segment.direction === "H" ? BLOCK - 4 : segment.length * BLOCK - 4;
+        ctx.fillRect(segment.x + 2, segment.y + 2, width, height);
     });
 
     snake.forEach((part, index) => {
