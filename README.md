@@ -16,7 +16,6 @@
 - **开局倒计时**：3-2-1-GO! 倒计时，预留操作准备时间
 - **移动端适配**：触摸滑动 + 虚拟方向键，完整支持手机游玩
 - **暂停 / 重开**：Space 暂停，R 重新开始，Esc 返回菜单
-- **GitHub Pages 部署**：通过 GitHub Actions 自动构建和部署
 - **Render 云部署**：通过 `render.yaml` 蓝图一键部署前后端一体的完整服务
 
 ## 🎮 难度说明
@@ -45,8 +44,6 @@ Greedy-Snake/
 │   ├── database.py           # 数据库连接
 │   ├── setup_db.py           # 建表脚本
 │   └── requirements.txt      # Python 依赖
-├── .github/workflows/
-│   └── deploy-pages.yml      # GitHub Pages 自动部署
 ├── render.yaml               # Render 云部署蓝图
 ├── .gitignore
 └── README.md
@@ -54,19 +51,21 @@ Greedy-Snake/
 
 > 后端同时托管静态资源：`/` 返回落地页，`/web_game/` 挂载游戏页面，因此单个 FastAPI 服务即可运行完整应用。
 
-## 🚀 本地运行
+## 🚀 运行方式
 
-**方式一：纯静态模式（无需后端）**
+**线上游玩（推荐，无需任何本地配置）**
 
-确保已安装 Python 3，然后执行：
+直接打开 Render 部署的地址即可注册、登录、游玩，成绩进入全球榜单：
 
-```bash
-python -m http.server 8080
+```
+https://<你的服务名>.onrender.com
 ```
 
-浏览器打开 http://127.0.0.1:8080 即可开始游戏（此模式下排行榜仅本机模式可用）。
+> Render 免费实例 15 分钟无访问会休眠，冷启动约需 30–60 秒，期间登录失败属正常现象，稍等重试即可。
 
-**方式二：完整模式（带后端，见下方"后端"章节）**
+**本地运行（改代码调试时使用）**
+
+游戏现在必须登录才能进入，因此本地也需要启动后端：
 
 ```bash
 uvicorn backend.main:app --reload
@@ -75,6 +74,8 @@ uvicorn backend.main:app --reload
 浏览器打开 http://127.0.0.1:8000/ 。
 
 > **让本地与线上数据互通**：把 `.env.example` 复制为 `.env`，填入与 Render 部署相同的云数据库连接串（`DATABASE_URL`），本地启动的后端就会直接读写云端库，你在本地玩和别人在线上玩的成绩进入同一个全球榜单。不创建 `.env` 时默认连接本机 MySQL，两份数据相互独立。
+>
+> 注意：纯静态方式（`python -m http.server`）因缺少后端登录接口已无法进入游戏，仅适合调试静态样式。
 
 ## 🕹️ 操作方式
 
