@@ -1394,7 +1394,12 @@
             }
 
             if (!response.ok) {
-                throw new Error(describeAuthError(body?.detail) || "账号服务暂时不可用");
+                const detail = describeAuthError(body?.detail);
+                if (detail) throw new Error(detail);
+                // 后端异常时可能返回非 JSON 的纯文本，此时按状态码给出线索
+                throw new Error(response.status >= 500
+                    ? `服务器暂时不可用（HTTP ${response.status}），请稍后再试。`
+                    : "账号服务暂时不可用");
             }
             return body;
         }

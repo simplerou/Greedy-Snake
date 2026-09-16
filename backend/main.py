@@ -13,20 +13,24 @@ from datetime import datetime, timedelta
 import base64
 import hashlib
 import hmac
+import logging
 from pathlib import Path
 import re
 import secrets
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .database import SessionLocal, init_db
 from .models import AuthSession, Score, User
+
+logger = logging.getLogger("uvicorn.error")
 
 # 项目根目录（backend/ 的上一级），用于托管前端页面
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +60,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(OperationalError)
+async def database_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
+    """数据库连不上或处于只读时给出可读提示。
+
+    否则 FastAPI 会返回 500 纯文本，前端拿不到 detail，只能显示笼统的兜底文案。
+    """
+    code = exc.orig.args[0] if getattr(exc, "orig", None) and exc.orig.args else None
+    if code == 1290:  # ER_OPTION_PREVENTS_STATEMENT，常见于实例欠费锁定或维护中
+        detail = "数据库当前处于只读状态，暂时无法写入数据，请稍后再试。"
+    else:
+        detail = "数据库暂时不可用，请稍后再试。"
+
+    logger.warning("数据库操作失败 (%s): %s", request.url.path, exc.orig)
+    return JSONResponse(status_code=503, content={"detail": detail})
 
 
 class ScoreIn(BaseModel):
