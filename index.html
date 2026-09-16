@@ -1418,6 +1418,10 @@
         }
 
         function selectMode(mode) {
+            // 切换 tab 时清空另一侧残留的输入，避免切回来看到上次填的内容
+            const visibleForm = document.querySelector("[data-auth-form]:not([hidden])");
+            if (visibleForm && visibleForm.dataset.authForm !== mode) resetAuthForms();
+
             const isLogin = mode === "login";
             title.textContent = isLogin ? "欢迎回来" : "创建玩家账号";
             intro.textContent = isLogin
