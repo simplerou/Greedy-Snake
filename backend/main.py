@@ -78,6 +78,8 @@ class RegisterIn(BaseModel):
     nickname: str = Field(max_length=MAX_NAME_LEN)
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
+    # 是否已同意用户协议与隐私政策；默认 False，由接口给出中文提示
+    agreed: bool = False
 
     @field_validator("nickname", mode="before")
     @classmethod
@@ -193,6 +195,10 @@ def health() -> dict:
 
 @app.post("/api/auth/register", response_model=AuthOut, status_code=201)
 def register(payload: RegisterIn) -> AuthOut:
+    # 直接调用 API 的请求同样必须带上同意标记，避免绕过前端勾选
+    if not payload.agreed:
+        raise HTTPException(status_code=422, detail="请先阅读并同意《用户协议》与《隐私政策》")
+
     nickname = payload.nickname
     if not nickname:
         raise HTTPException(status_code=422, detail="昵称不能为空或全是空格")
@@ -318,6 +324,18 @@ def home() -> FileResponse:
 @app.get("/README.md", include_in_schema=False)
 def readme() -> FileResponse:
     return FileResponse(ROOT / "README.md", media_type="text/markdown")
+
+
+@app.get("/terms.html", include_in_schema=False)
+def terms() -> FileResponse:
+    """用户协议，注册时需勾选同意。"""
+    return FileResponse(ROOT / "terms.html", media_type="text/html")
+
+
+@app.get("/privacy.html", include_in_schema=False)
+def privacy() -> FileResponse:
+    """隐私政策，注册时需勾选同意。"""
+    return FileResponse(ROOT / "privacy.html", media_type="text/html")
 
 
 app.mount(

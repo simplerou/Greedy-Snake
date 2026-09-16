@@ -152,7 +152,7 @@
 
         .authPanel {
             position: relative;
-            padding: 34px;
+            padding: 30px 34px;
             background:
                 linear-gradient(145deg, rgba(105, 244, 154, .07), transparent 40%),
                 linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
@@ -262,6 +262,40 @@
 
         .authField input::placeholder {
             color: #526058;
+        }
+
+        /* ── 注册时的协议勾选 ── */
+        .authAgree {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-top: -2px;
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        .authAgree input {
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            accent-color: var(--green);
+            cursor: pointer;
+        }
+
+        .authAgree label {
+            cursor: pointer;
+        }
+
+        .authAgree a {
+            color: var(--green);
+            text-decoration: none;
+        }
+
+        .authAgree a:hover,
+        .authAgree a:focus-visible {
+            text-decoration: underline;
         }
 
         /* ── 注册密码强度检测 ── */
@@ -974,6 +1008,13 @@
                 确认密码
                 <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="再次输入密码" required>
             </label>
+            <div class="authAgree">
+                <input type="checkbox" id="agreeTerms" name="agreed" required>
+                <label for="agreeTerms">我已阅读并同意</label>
+                <a href="/terms.html" target="_blank" rel="noopener">《用户协议》</a>
+                <span>与</span>
+                <a href="/privacy.html" target="_blank" rel="noopener">《隐私政策》</a>
+            </div>
             <button class="authSubmit" type="submit">创建玩家账号 →</button>
         </form>
 
@@ -1544,6 +1585,12 @@
                 return;
             }
 
+            // 浏览器原生 required 已会拦截，这里再兜一层，避免绕过属性直接提交
+            if (!document.getElementById("agreeTerms").checked) {
+                status.textContent = "请先阅读并同意《用户协议》与《隐私政策》。";
+                return;
+            }
+
             setSubmitting(form, true);
             status.textContent = "";
 
@@ -1554,7 +1601,8 @@
                     body: JSON.stringify({
                         nickname,
                         email: data.get("email"),
-                        password
+                        password,
+                        agreed: document.getElementById("agreeTerms").checked
                     })
                 });
 

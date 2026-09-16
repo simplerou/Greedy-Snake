@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#050807">
+    <title>隐私政策 · Greedy Snake</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #050807;
+            --panel: #0b100d;
+            --line: #263129;
+            --text: #f3f7f4;
+            --muted: #8d9a91;
+            --green: #69f49a;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 48px 20px 80px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+            line-height: 1.9;
+        }
+
+        main {
+            max-width: 760px;
+            margin: 0 auto;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 28px;
+            color: var(--green);
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .back:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 26px;
+            letter-spacing: 1px;
+        }
+
+        .meta {
+            margin: 0 0 32px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        h2 {
+            margin: 34px 0 10px;
+            font-size: 16px;
+            color: var(--green);
+        }
+
+        p,
+        li {
+            font-size: 14px;
+            color: #d7ded9;
+        }
+
+        ul {
+            padding-left: 22px;
+        }
+
+        table {
+            width: 100%;
+            margin: 12px 0;
+            border-collapse: collapse;
+            font-size: 13.5px;
+        }
+
+        th,
+        td {
+            padding: 9px 12px;
+            border: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: var(--panel);
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .note {
+            margin-top: 40px;
+            padding: 14px 16px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--muted);
+            font-size: 12.5px;
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <a class="back" href="/">← 返回游戏首页</a>
+        <h1>隐私政策</h1>
+        <p class="meta">生效日期：待填写 · 版本：v1</p>
+
+        <p>本政策说明 Greedy Snake（以下称"本服务"）会收集哪些信息、如何使用与保存，以及你可以如何管理这些信息。使用本服务即表示你已阅读并理解本政策。</p>
+
+        <h2>一、我们收集的信息</h2>
+        <table>
+            <tr>
+                <th>信息</th>
+                <th>收集时机</th>
+                <th>用途</th>
+            </tr>
+            <tr>
+                <td>邮箱地址</td>
+                <td>注册账号时</td>
+                <td>作为账号标识，用于登录与找回账号</td>
+            </tr>
+            <tr>
+                <td>昵称</td>
+                <td>注册账号时</td>
+                <td>在游戏内与排行榜上显示</td>
+            </tr>
+            <tr>
+                <td>密码（不可逆哈希值）</td>
+                <td>注册账号时</td>
+                <td>校验登录。密码经过 scrypt 单向加密后保存，我们无法还原你的明文密码</td>
+            </tr>
+            <tr>
+                <td>游戏成绩（分数、难度、存活时长、食物数量、移动步数）</td>
+                <td>完成一局并提交成绩时</td>
+                <td>生成排行榜与个人成绩记录</td>
+            </tr>
+            <tr>
+                <td>登录会话令牌（哈希值）与有效期</td>
+                <td>登录时</td>
+                <td>保持登录状态，30 天后自动失效</td>
+            </tr>
+        </table>
+
+        <h2>二、保存在你浏览器本地的信息</h2>
+        <p>以下内容仅保存在你自己的浏览器（localStorage）中，不会上传到服务器：</p>
+        <ul>
+            <li>登录令牌（用于免去每次打开都重新登录）；</li>
+            <li>本机排行榜记录、昵称偏好、最佳成绩。</li>
+        </ul>
+        <p>清除浏览器数据即可删除这些本地信息。本服务不使用第三方广告或统计脚本，也不使用跟踪型 Cookie。</p>
+
+        <h2>三、信息的使用与共享</h2>
+        <ul>
+            <li>收集的信息仅用于账号登录、游戏内展示与排行榜功能，以及维护服务安全（例如处理异常成绩）。</li>
+            <li>我们不会向任何第三方出售、出租或交易你的个人信息。</li>
+            <li>排行榜上会公开显示你的昵称与成绩，请勿把敏感信息用作昵称。</li>
+        </ul>
+
+        <h2>四、存储地点与保存期限</h2>
+        <ul>
+            <li>账号与成绩数据存储于云数据库（阿里云 RDS MySQL 实例）中。</li>
+            <li>账号信息在账号存续期间保留；登录会话在 30 天后过期失效。</li>
+            <li>你可以申请删除账号，删除后与账号关联的邮箱、昵称、密码哈希与登录会话将被清除。</li>
+        </ul>
+
+        <h2>五、你的权利</h2>
+        <p>你可以通过下方联系方式：查询账号信息、更正昵称、申请删除账号。我们会在收到申请后尽快处理。</p>
+
+        <h2>六、未成年人</h2>
+        <p>若你未满 14 周岁，请在监护人陪同并同意的情况下使用本服务。</p>
+
+        <h2>七、政策变更</h2>
+        <p>本政策如有更新，将在本页面公布并更新生效日期。涉及重大变更时，我们会在游戏页面作出提示。</p>
+
+        <h2>八、联系方式</h2>
+        <p>如对本政策有任何疑问，或需要行使上述权利，请联系：<strong>待填写联系邮箱</strong></p>
+
+        <div class="note">
+            提示：本文件依据本项目实际收集的数据范围起草。请补充生效日期与联系邮箱，并按你的实际情况（例如是否接入统计工具、是否新增短信提醒等）调整内容。
+        </div>
+    </main>
+</body>
+
+</html>
