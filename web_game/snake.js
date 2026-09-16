@@ -87,8 +87,8 @@ const DIFFICULTIES = {
         speedUpEvery: 100,
         speedStep: 10,
         minSpeed: 120,
-        // 固定配方：8 段长度 1 的障碍物（数字为格数）
-        obstacleLengths: [1, 1, 1, 1, 1, 1, 1, 1],
+        // 固定配方：16 段长度 1 的障碍物（数字为格数）
+        obstacleLengths: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         obstacleMoveEvery: 0
     },
     medium: {
