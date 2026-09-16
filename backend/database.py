@@ -20,9 +20,9 @@ from sqlalchemy.orm import sessionmaker
 # 读取项目根目录的 .env（已设置的环境变量优先），便于本地直接连接云端数据库
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-RAW_DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "mysql+pymysql://root@localhost:3306/greedy_snake?charset=utf8mb4",
+RAW_DATABASE_URL = os.getenv("DATABASE_URL") or (
+    # 环境变量为空字符串时也视为未设置，回落到本地默认库
+    "mysql+pymysql://root@localhost:3306/greedy_snake?charset=utf8mb4"
 )
 
 
