@@ -62,6 +62,20 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def revalidate_static_assets(request: Request, call_next):
+    """让页面与静态资源每次回源校验。
+
+    浏览器允许缓存但不许跳过校验（配合 etag 命中时只返回 304），
+    否则前端改了 JS/CSS 之后，老玩家会继续跑缓存里的旧文件。
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/web_game/") or path in ("/", "/terms.html", "/privacy.html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(OperationalError)
 async def database_unavailable(request: Request, exc: OperationalError) -> JSONResponse:
     """数据库连不上或处于只读时给出可读提示。
