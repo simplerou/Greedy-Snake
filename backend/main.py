@@ -47,7 +47,7 @@ SCRYPT_P = 1
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_db()  # 启动时建表（需已手动创建数据库）
+    init_db()  # 启动时建表（SQLite 自动建文件；MySQL 需已手动创建数据库）
     yield
 
 

@@ -6,3 +6,11 @@ __pycache__/
 
 .vscode/
 .zcode/
+.workbuddy/
+.pip-tmp/
+
+# 默认 SQLite 数据库文件（含 WAL / journal 附属文件），不入版本库
+greedy_snake.db
+greedy_snake.db-journal
+greedy_snake.db-wal
+greedy_snake.db-shm

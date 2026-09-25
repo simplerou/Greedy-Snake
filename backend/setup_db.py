@@ -1,35 +1,55 @@
 """数据库一键初始化脚本。
 
 作用：
-1. 测试能否连上 MySQL 服务器
-2. 自动创建 greedy_snake 数据库（不存在时）
-3. 自动建表（scores）
+1. 检查目标数据库是否可用（SQLite 自动创建文件，无需检查）
+2. 自动创建 MySQL 数据库（不存在时）；SQLite 无此步骤
+3. 自动建表（users / auth_sessions / scores）
 
 用法（在项目根目录）：
     python backend/setup_db.py
 
-如果连接被拒绝，说明密码不对，先设置环境变量再运行：
+默认使用 SQLite，不需要任何准备。想改用 MySQL 时先设置连接串再运行：
     PowerShell:  $env:DATABASE_URL = "mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"
 """
-import os
 import sys
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 try:
     from .database import DATABASE_URL
 except ImportError:
     from database import DATABASE_URL
 
+MYSQL_HINT = (
+    '      $env:DATABASE_URL = '
+    '"mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"'
+)
+
 
 def main() -> None:
     print(f"目标连接串: {mask_password(DATABASE_URL)}")
 
-    # 1. 连接服务器本身（去掉库名，保留账号），测试账号密码是否正确
+    url = make_url(DATABASE_URL)
+    if url.get_backend_name() == "sqlite":
+        print("[1/2] 使用 SQLite：无需数据库服务，也无需预先建库")
+        print(f"      数据库文件: {url.database}")
+        create_tables("[2/2]")
+    else:
+        setup_mysql()
+
+    print("\n✅ 数据库全部就绪！接下来在项目根目录运行:")
+    print("   uvicorn backend.main:app --reload")
+    print("   然后打开 http://127.0.0.1:8000/")
+
+
+def setup_mysql() -> None:
+    """连接 MySQL 服务器、建库、建表。"""
     parts = urlsplit(DATABASE_URL)
     server_url = f"{parts.scheme}://{parts.netloc}/?charset=utf8mb4"
 
+    # 1. 连接服务器本身（去掉库名，保留账号），测试账号密码是否正确
     try:
         server = create_engine(server_url, pool_pre_ping=True)
         with server.connect() as conn:
@@ -39,7 +59,7 @@ def main() -> None:
         print("[1/3] 连接 MySQL 服务器失败！")
         print(f"      原因: {error}")
         print("      最常见原因是 root 密码不对。请设置环境变量后重试：")
-        print('      $env:DATABASE_URL = "mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"')
+        print(MYSQL_HINT)
         sys.exit(1)
 
     # 2. 创建数据库（不存在时）
@@ -57,23 +77,33 @@ def main() -> None:
     except Exception as error:  # noqa: BLE001
         print(f"[2/3] 创建数据库失败: {error}")
         sys.exit(1)
+    finally:
+        server.dispose()
 
     # 3. 建表
+    create_tables("[3/3]")
+
+
+def create_tables(label: str) -> None:
+    """建表。
+
+    这里直接调用 create_all 而不是复用 init_db()：后者会吞掉连接异常以保证
+    Web 服务能照常启动，而初始化脚本需要把真实的失败原因暴露出来。
+    """
     try:
         try:
-            from .database import init_db
+            from .database import engine
+            from .models import Base
         except ImportError:
-            from database import init_db
+            from database import engine
+            from models import Base
 
-        init_db()
-        print("[3/3] 数据表创建完成（scores）")
+        Base.metadata.create_all(engine)
     except Exception as error:  # noqa: BLE001
-        print(f"[3/3] 建表失败: {error}")
+        print(f"{label} 建表失败: {error}")
         sys.exit(1)
 
-    print("\n✅ 数据库全部就绪！接下来在项目根目录运行:")
-    print("   uvicorn backend.main:app --reload")
-    print("   然后打开 http://127.0.0.1:8000/")
+    print(f"{label} 数据表创建完成（users / auth_sessions / scores）")
 
 
 def mask_password(url: str) -> str:

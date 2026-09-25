@@ -1,6 +1,6 @@
 # 🐍 Greedy Snake · 经典贪吃蛇
 
-一个基于原生 HTML / CSS / JavaScript 的经典贪吃蛇网页游戏（前端零框架依赖），并附带 FastAPI 后端提供账号系统与全球排行榜，支持 Render 一键云部署。
+一个基于原生 HTML / CSS / JavaScript 的经典贪吃蛇网页游戏（前端零框架依赖），并附带 FastAPI 后端提供账号系统与全球排行榜。默认使用 SQLite，克隆下来不需要任何数据库服务就能直接跑；也可切换到 MySQL，并支持 Render 一键云部署。
 
 ## ✨ 功能特性
 
@@ -33,7 +33,9 @@
 
 ```
 Greedy-Snake/
-├── index.html                # 落地页（难度选择入口）
+├── index.html                # 落地页：难度选择 + 注册 / 登录
+├── terms.html                # 用户协议（注册时需勾选同意）
+├── privacy.html              # 隐私政策（注册时需勾选同意）
 ├── web_game/                 # 游戏源码（纯静态）
 │   ├── page/
 │   │   └── home.html         # 游戏页面
@@ -42,10 +44,12 @@ Greedy-Snake/
 ├── backend/                  # FastAPI 后端
 │   ├── main.py               # 路由：健康检查、认证、成绩提交、全球排行榜
 │   ├── models.py             # 数据模型（SQLAlchemy）
-│   ├── database.py           # 数据库连接
-│   ├── setup_db.py           # 建表脚本
+│   ├── database.py           # 数据库连接（默认 SQLite，可切 MySQL）
+│   ├── setup_db.py           # 数据库一键初始化脚本
 │   └── requirements.txt      # Python 依赖
+├── greedy_snake.db           # SQLite 数据库文件（首次启动自动生成，已 gitignore）
 ├── render.yaml               # Render 云部署蓝图
+├── .env.example              # 环境变量模板（改用 MySQL 时复制为 .env）
 ├── .gitignore
 └── README.md
 ```
@@ -66,17 +70,18 @@ https://<你的服务名>.onrender.com
 
 **本地运行（改代码调试时使用）**
 
-游戏现在必须登录才能进入，因此本地也需要启动后端：
+游戏必须登录才能进入，所以本地也要启动后端。**不需要任何数据库服务**——默认使用 SQLite，数据库文件会在首次启动时自动创建为项目根目录的 `greedy_snake.db`：
 
 ```bash
+pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-浏览器打开 http://127.0.0.1:8000/ 。
+浏览器打开 http://127.0.0.1:8000/ ，注册一个账号即可开玩。
 
-> **让本地与线上数据互通**：把 `.env.example` 复制为 `.env`，填入与 Render 部署相同的云数据库连接串（`DATABASE_URL`），本地启动的后端就会直接读写云端库，你在本地玩和别人在线上玩的成绩进入同一个全球榜单。不创建 `.env` 时默认连接本机 MySQL，两份数据相互独立。
+> **改用 MySQL**：把 `.env.example` 复制为 `.env` 并填入连接串（`DATABASE_URL`），就会从 SQLite 切换到 MySQL。填入与 Render 部署相同的云数据库连接串时，本地与线上共享同一份全球榜单；连接本机 MySQL 时两份数据相互独立。不创建 `.env`（或把其中 `DATABASE_URL` 注释掉）时使用 SQLite。
 >
-> 注意：纯静态方式（`python -m http.server`）因缺少后端登录接口已无法进入游戏，仅适合调试静态样式。
+> 注意：纯静态方式（`python -m http.server`）因缺少后端登录接口无法进入游戏，仅适合调试静态样式。
 
 ## 🕹️ 操作方式
 
@@ -91,16 +96,29 @@ uvicorn backend.main:app --reload
 - **原生 JavaScript** — 游戏逻辑（无框架依赖）
 - **CSS3** — 暗色主题 UI + 响应式布局
 - **localStorage** — 本地数据持久化（排行榜 / 玩家昵称）
-- **FastAPI + SQLAlchemy + MySQL** — 账号系统与全球排行榜后端（可选，不启动时自动降级为纯本机模式）
+- **FastAPI + SQLAlchemy** — 账号系统与全球排行榜后端
+- **SQLite（默认）/ MySQL（可选）** — 数据存储；SQLite 零配置开箱即用，MySQL 用于云端多玩家共享榜单
 
-## 🧩 后端：全球排行榜（可选）
+## 🧩 后端：账号与全球排行榜
 
-开启后端后，排行榜面板可切换"本机 / 全球"：成绩提交到 MySQL，所有玩家共享一个榜单。不启动后端时游戏自动降级为纯本机模式。
+排行榜面板可切换"本机 / 全球"：成绩提交到数据库，所有玩家共享一个榜单。本机榜存在浏览器 localStorage 里，与后端无关。
 
 ### 1. 准备数据库
 
+**SQLite（默认）**：什么都不用做，首次启动会自动创建 `greedy_snake.db`。
+
+**MySQL（可选）**：需要先手动建库，并在 `.env` 里配好连接串。
+
 ```sql
 CREATE DATABASE greedy_snake CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+```bash
+# 在项目根目录的 .env 里写入（密码含特殊字符需 URL 编码）
+# DATABASE_URL=mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4
+
+# 一键初始化：先测连接，再建库，最后建表
+python backend/setup_db.py
 ```
 
 ### 2. 安装依赖并启动
@@ -108,12 +126,20 @@ CREATE DATABASE greedy_snake CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```bash
 pip install -r backend/requirements.txt
 
-# MySQL 有密码时先设置环境变量（PowerShell）
-$env:DATABASE_URL = "mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"
-
 # 在项目根目录启动（同时托管前端页面）
 uvicorn backend.main:app --reload
 ```
+
+> **依赖版本已用 `==` 钉死**，避免重新部署时被静默升级到不兼容的大版本。升级流程：改版本号 → 重新安装 → 跑一遍测试再提交。
+>
+> 想把间接依赖也一起冻住（真正的可复现构建），用 `pip-compile`：
+>
+> ```bash
+> pip install pip-tools
+> pip-compile -o backend/requirements.lock.txt backend/requirements.txt
+> ```
+>
+> **不要用 `pip freeze` 生成 lock 文件**——在 Windows 上 freeze 会漏掉 Linux 专属的 `uvloop`，还会带上 Windows 专属的 `colorama`，这份文件拿到 Linux 上是错的。
 
 ### 3. 访问
 
@@ -132,8 +158,9 @@ uvicorn backend.main:app --reload
 
 仓库根目录的 `render.yaml` 是 Render Blueprint 部署配置：单个 Python Web 服务同时运行后端 API 并托管前端页面，数据库连接串通过环境变量 `DATABASE_URL` 注入（当前使用阿里云 RDS MySQL，任何 MySQL 兼容的云数据库均可）。
 
-在 Render 控制台选择 "New → Blueprint" 并导入本仓库即可一键部署；部署时在控制台填入你的 `DATABASE_URL`。两点注意：
+在 Render 控制台选择 "New → Blueprint" 并导入本仓库即可一键部署；部署时在控制台填入你的 `DATABASE_URL`。三点注意：
 
+- **线上务必配置 `DATABASE_URL`**：不配置时会回落到默认的 SQLite，而 Render 的容器文件系统是临时的——每次重新部署或实例重启数据都会丢失，也无法多实例共享榜单。SQLite 只适合本地开发。
 - **密码中的特殊字符必须 URL 编码**：例如密码以 `@` 结尾时写成 `%40`，否则 `@` 会被当作连接串的分隔符导致域名解析失败。
 - **阿里云 RDS 需要配置白名单**：Render 的出口 IP 是动态的，无法逐个放通，只能在 RDS 白名单中添加 `0.0.0.0/0`。请务必使用高强度密码，并确保 `.env`、连接串不会进入版本库。
 
