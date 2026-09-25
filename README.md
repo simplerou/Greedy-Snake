@@ -154,6 +154,23 @@ uvicorn backend.main:app --reload
 | `POST /api/scores` | 提交成绩（需登录） |
 | `GET /api/health` | 健康检查 |
 
+## 🧪 测试
+
+后端接口测试基于 pytest，覆盖认证、成绩校验、榜单、限流与静态资源托管：
+
+```bash
+pip install -r backend/requirements-dev.txt
+pytest                          # 全部用例
+pytest -v                       # 显示每个用例的名字
+pytest -k TestScoreAntiCheat    # 只跑防作弊相关
+```
+
+测试会自建一个临时 SQLite 库并逐用例清表，**不会碰开发用的 `greedy_snake.db`**。
+
+> **成绩防作弊**：`POST /api/scores` 会做服务端一致性校验——得分必须等于「食物数 × 10」，食物数不能超过移动步数，移动步数与存活时间要对得上。纯前端游戏没法彻底防作弊（改 JS 就能伪造数据），这一层的作用是让"随手改个数字就霸榜"不再成立。
+>
+> **限流**：登录每 IP 每分钟 10 次、注册每 IP 5 分钟 5 次，超限返回 429。限流计数存在进程内存里，因此只对单实例部署有效；多实例需要换成 Redis 之类的共享存储。
+
 ## ☁️ 云部署（Render）
 
 仓库根目录的 `render.yaml` 是 Render Blueprint 部署配置：单个 Python Web 服务同时运行后端 API 并托管前端页面，数据库连接串通过环境变量 `DATABASE_URL` 注入（当前使用阿里云 RDS MySQL，任何 MySQL 兼容的云数据库均可）。
