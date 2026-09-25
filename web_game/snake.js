@@ -99,8 +99,8 @@ const DIFFICULTIES = {
         speedUpEvery: 50,
         speedStep: 15,
         minSpeed: 50,
-        // 固定配方：单格与长条并存，合计 10 格
-        obstacleLengths: [1, 1, 1, 2, 2, 3],
+        // 固定配方：单格与长条并存，16 段合计 30 格（数字为格数）
+        obstacleLengths: [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3],
         obstacleMoveEvery: 0
     },
     hard: {
@@ -112,7 +112,7 @@ const DIFFICULTIES = {
         speedStep: 10,
         minSpeed: 45,
         // 长度随机（1 ~ obstacleMaxLength），总格数由 obstacleTotal 控制
-        obstacleTotal: 15,
+        obstacleTotal: 45,
         obstacleMaxLength: 3,
         obstacleMoveEvery: 25
     }
