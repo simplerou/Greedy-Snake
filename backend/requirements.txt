@@ -1,7 +1,20 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-SQLAlchemy>=2.0
-PyMySQL>=1.1
-cryptography>=42
-python-dotenv>=1.0
-certifi>=2024.2.2
+# Greedy Snake 后端依赖
+#
+# 版本锁定为经过实测验证的组合，避免重新部署时被静默升级到不兼容的大版本。
+# 升级流程：改这里的版本号 → pip install -r backend/requirements.txt → 跑一遍测试。
+#
+# 说明：
+# - 这里只钉直接依赖。间接依赖（starlette / pydantic 等）由各自的约束牵引，
+#   要连它们一起冻住请用 pip-compile（见 README），不要用 pip freeze——
+#   Windows 上 freeze 出来的结果会漏掉 Linux 专属的 uvloop，还会带上 Windows 专属的 colorama。
+# - PyMySQL 的包内 __version__ 属性不可信（会报成 2.2.8），钉版本请以分发包元数据为准。
+# - uvicorn[standard] 的 extras 在 Linux 上会额外带上 httptools / uvloop / websockets / watchfiles，
+#   --reload 依赖 watchfiles；本机若没装会自动回退到 statreload 轮询。
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+SQLAlchemy==2.0.43
+PyMySQL==1.2.0
+cryptography==46.0.3
+python-dotenv==1.1.0
+certifi==2025.11.12
