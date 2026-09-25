@@ -8,15 +8,19 @@
 接口文档：
     http://127.0.0.1:8000/docs
 """
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
 import hmac
 import logging
+import os
 from pathlib import Path
 import re
 import secrets
+import threading
+import time
 from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -44,6 +48,34 @@ SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
 
+# ── 成绩校验参数（必须与前端 web_game/snake.js 保持一致）──────────
+# 每吃一个食物固定加 10 分，对应前端 `score += 10`，游戏没有其他加分项
+SCORE_PER_FOOD = 10
+# 各难度蛇的移动间隔下限（毫秒），对应前端 DIFFICULTIES[*].minSpeed。
+# 主循环是 setTimeout(gameLoop, speed)，且 speed 只会从 startSpeed 降到 minSpeed，
+# 所以走 N 步至少需要 (N-1) * minSpeed 毫秒。
+MIN_TICK_MS = {"easy": 120, "medium": 50, "hard": 45}
+# 给浏览器定时器抖动留的余量：把时间下限再放宽 10%，避免误伤真实成绩
+TIME_TOLERANCE = 0.9
+
+# ── 限流参数：(窗口内允许的请求数, 窗口秒数) ────────────────────
+LOGIN_RATE_LIMIT = (10, 60)     # 登录：每 IP 每分钟 10 次
+REGISTER_RATE_LIMIT = (5, 300)  # 注册：每 IP 5 分钟 5 次
+
+# ── CORS ─────────────────────────────────────────────────
+# 前端由本服务同源托管，正常访问根本不会触发 CORS。
+# 这里只放通本地开发常见的来源；需要额外来源时用逗号分隔的
+# CORS_ORIGINS 环境变量覆盖，设为空字符串则完全不启用该中间件。
+DEFAULT_CORS_ORIGINS = (
+    "http://127.0.0.1:8000,http://localhost:8000,"
+    "http://127.0.0.1:5173,http://localhost:5173"
+)
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -53,13 +85,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Greedy Snake API", lifespan=lifespan)
 
-# 允许跨域：前端开发和部署可能在不同端口/域名
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
+
 
 
 @app.middleware("http")
@@ -184,13 +217,23 @@ def token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def utcnow() -> datetime:
+    """当前的 UTC 时间（不带时区信息）。
+
+    AuthSession.expires_at 是 naive DateTime 列，所以这里刻意保持 naive，
+    只把已废弃的 datetime.utcnow() 换成等价写法，行为完全一致。
+    （datetime.utcnow() 自 Python 3.12 起标记废弃，未来版本会移除。）
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def create_session(session, user: User) -> str:
     token = secrets.token_urlsafe(32)
     session.add(
         AuthSession(
             user_id=user.id,
             token_hash=token_digest(token),
-            expires_at=datetime.utcnow() + timedelta(days=SESSION_DAYS),
+            expires_at=utcnow() + timedelta(days=SESSION_DAYS),
         )
     )
     return token
@@ -210,7 +253,7 @@ def get_current_user(session, authorization: str | None) -> tuple[User, AuthSess
     auth_session = session.scalar(
         select(AuthSession).where(AuthSession.token_hash == token_digest(token))
     )
-    if not auth_session or auth_session.expires_at <= datetime.utcnow():
+    if not auth_session or auth_session.expires_at <= utcnow():
         if auth_session:
             session.delete(auth_session)
             session.commit()
@@ -222,13 +265,109 @@ def get_current_user(session, authorization: str | None) -> tuple[User, AuthSess
     return user, auth_session
 
 
+class SlidingWindowLimiter:
+    """进程内的滑动窗口限流。
+
+    只适用于单实例部署（本机开发、Render 免费实例都没问题）。
+    多实例部署时每个实例各算各的，实际额度会被放大若干倍，
+    那种场景需要换成 Redis 之类的外部共享存储。
+
+    用单调时钟（time.monotonic）而不是墙上时钟，避免系统改时间导致窗口错乱。
+    """
+
+    def __init__(self, max_requests: int, window_seconds: float) -> None:
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+        self._since_sweep = 0
+
+    def allow(self, key: str) -> bool:
+        """记录一次请求；窗口内已超上限则返回 False 且不计数。"""
+        now = time.monotonic()
+        with self._lock:
+            self._sweep(now)
+
+            bucket = self._hits[key]
+            cutoff = now - self.window_seconds
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
+
+            if len(bucket) >= self.max_requests:
+                return False
+
+            bucket.append(now)
+            return True
+
+    def reset(self) -> None:
+        """清空全部计数（供测试使用）。"""
+        with self._lock:
+            self._hits.clear()
+            self._since_sweep = 0
+
+    def _sweep(self, now: float) -> None:
+        """每隔若干次请求清理一次过期时间桶，防止被大量不同 IP 撑爆内存。"""
+        self._since_sweep += 1
+        if self._since_sweep < 1000:
+            return
+        self._since_sweep = 0
+
+        cutoff = now - self.window_seconds
+        for key in [k for k, v in self._hits.items() if not v or v[-1] <= cutoff]:
+            del self._hits[key]
+
+
+login_limiter = SlidingWindowLimiter(*LOGIN_RATE_LIMIT)
+register_limiter = SlidingWindowLimiter(*REGISTER_RATE_LIMIT)
+
+
+def enforce_rate_limit(request: Request, limiter: SlidingWindowLimiter, message: str) -> None:
+    """按来源 IP 限流，超限抛 429。"""
+    client_ip = request.client.host if request.client else "unknown"
+    if not limiter.allow(client_ip):
+        raise HTTPException(status_code=429, detail=message)
+
+
+def check_score_consistency(payload: ScoreIn) -> None:
+    """校验一局成绩的各字段是否自洽，挡住明显伪造的提交。
+
+    纯前端游戏没法彻底防作弊——有心人改了 snake.js 就能伪造任意数据。
+    这里的目标只是让"随手改个数字就能霸榜"不再成立，把作弊成本抬上去。
+
+    三条规则都直接对应前端 web_game/snake.js 的真实行为：
+    1. 得分 = 食物数 × 10（前端 `score += 10`，游戏没有其他加分项）
+    2. 食物数不会超过移动步数（每次进食都发生在一次移动里）
+    3. 移动步数受主循环间隔约束，走 N 步至少需要 (N-1) × 该难度的最小间隔毫秒数
+    """
+    if payload.score != payload.food_eaten * SCORE_PER_FOOD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"成绩不合法：得分应与食物数匹配（每个食物 {SCORE_PER_FOOD} 分）",
+        )
+
+    if payload.food_eaten > payload.moves:
+        raise HTTPException(
+            status_code=422,
+            detail="成绩不合法：吃到的食物数不可能超过移动步数",
+        )
+
+    min_ms = (payload.moves - 1) * MIN_TICK_MS[payload.difficulty] * TIME_TOLERANCE
+    if payload.duration_seconds * 1000 < min_ms:
+        raise HTTPException(
+            status_code=422,
+            detail="成绩不合法：移动步数与存活时间对不上",
+        )
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
 @app.post("/api/auth/register", response_model=AuthOut, status_code=201)
-def register(payload: RegisterIn) -> AuthOut:
+def register(payload: RegisterIn, request: Request) -> AuthOut:
+    enforce_rate_limit(request, register_limiter, "注册过于频繁，请稍后再试")
+
     # 直接调用 API 的请求同样必须带上同意标记，避免绕过前端勾选
     if not payload.agreed:
         raise HTTPException(status_code=422, detail="请先阅读并同意《用户协议》与《隐私政策》")
@@ -265,7 +404,9 @@ def register(payload: RegisterIn) -> AuthOut:
 
 
 @app.post("/api/auth/login", response_model=AuthOut)
-def login(payload: LoginIn) -> AuthOut:
+def login(payload: LoginIn, request: Request) -> AuthOut:
+    enforce_rate_limit(request, login_limiter, "登录尝试过于频繁，请稍后再试")
+
     email = normalize_email(payload.email)
 
     with SessionLocal() as session:
@@ -273,7 +414,7 @@ def login(payload: LoginIn) -> AuthOut:
         if not user or not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=401, detail="邮箱或密码不正确")
 
-        session.execute(delete(AuthSession).where(AuthSession.expires_at <= datetime.utcnow()))
+        session.execute(delete(AuthSession).where(AuthSession.expires_at <= utcnow()))
         token = create_session(session, user)
         session.commit()
         return AuthOut(token=token, user=UserOut(id=user.id, nickname=user.nickname, email=user.email))
@@ -302,6 +443,8 @@ def submit_score(
     """提交一局成绩，返回其在全球同难度中的名次。"""
     with SessionLocal() as session:
         user, _ = get_current_user(session, authorization)
+        # 先鉴权再校验：未登录直接 401，不给未授权请求探测校验规则的机会
+        check_score_consistency(payload)
         session.add(
             Score(
                 name=user.nickname,
