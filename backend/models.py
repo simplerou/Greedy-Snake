@@ -36,6 +36,11 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 注销申请时间。为空表示账号正常；有值表示处于注销冷静期内。
+    # 冷静期的判定与清理逻辑见 main.py 的 purge_expired_deletions()。
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
 
 
 class AuthSession(Base):

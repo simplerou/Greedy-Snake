@@ -78,6 +78,75 @@ async function requireAuthentication() {
     }
 }
 
+/* ── 注销账号：登记申请 + 15 天冷静期 ───────────────── */
+
+const deleteAccountElement = document.getElementById("deleteAccount");
+const deleteDialogElement = document.getElementById("deleteDialog");
+const deleteConfirmPanel = document.getElementById("deleteConfirmPanel");
+const deleteDonePanel = document.getElementById("deleteDonePanel");
+const deleteCancelElement = document.getElementById("deleteCancel");
+const deleteConfirmElement = document.getElementById("deleteConfirm");
+const deleteDoneElement = document.getElementById("deleteDone");
+const deleteDoneTextElement = document.getElementById("deleteDoneText");
+const deleteStatusElement = document.getElementById("deleteStatus");
+
+function openDeleteDialog() {
+    deleteConfirmPanel.hidden = false;
+    deleteDonePanel.hidden = true;
+    deleteCancelElement.disabled = false;
+    deleteConfirmElement.disabled = false;
+    deleteStatusElement.textContent = "";
+    deleteDialogElement.showModal();
+}
+
+async function requestAccountDeletion() {
+    const token = getAuthToken();
+    if (!token) {
+        window.location.replace("../../?login=required");
+        return;
+    }
+
+    deleteCancelElement.disabled = true;
+    deleteConfirmElement.disabled = true;
+    deleteStatusElement.textContent = "正在提交…";
+
+    try {
+        const response = await fetch(`${API_BASE}/api/auth/account`, {
+            method: "DELETE",
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const result = await response.json();
+
+        // 服务端提交后会让该账号的所有会话立即失效，这里同步清掉本地令牌。
+        // 否则浏览器会一直拿着一个已失效的令牌，下次进来只会撞上 401。
+        try {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+        } catch (storageError) {
+            // 存储不可用时忽略：令牌在服务端已失效，留着也没用。
+        }
+
+        deleteDoneTextElement.textContent =
+            `若 ${result.grace_days} 天内没有重新登录，账号、登录状态与全部历史成绩`
+            + `将被清除。期间重新登录即可自动恢复。`;
+        deleteConfirmPanel.hidden = true;
+        deleteDonePanel.hidden = false;
+    } catch (error) {
+        deleteCancelElement.disabled = false;
+        deleteConfirmElement.disabled = false;
+        deleteStatusElement.textContent = "提交失败，请稍后再试。";
+    }
+}
+
+deleteAccountElement.addEventListener("click", openDeleteDialog);
+deleteCancelElement.addEventListener("click", () => deleteDialogElement.close());
+deleteConfirmElement.addEventListener("click", requestAccountDeletion);
+deleteDoneElement.addEventListener("click", () => {
+    deleteDialogElement.close();
+    window.location.replace("../../");
+});
+
 const DIFFICULTIES = {
     easy: {
         name: "低等难度",

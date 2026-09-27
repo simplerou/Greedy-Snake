@@ -43,6 +43,8 @@ DIFFICULTIES = {"easy", "medium", "hard"}
 MAX_SCORE = 1_000_000
 MAX_NAME_LEN = 12  # 与前端 normalizePlayerName 保持一致
 SESSION_DAYS = 30
+# 注销冷静期：发起注销后这么多天内重新登录即自动取消；期满仍未登录才清除账号
+DELETION_GRACE_DAYS = 15
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SCRYPT_N = 2**14
 SCRYPT_R = 8
@@ -80,6 +82,14 @@ CORS_ORIGINS = [
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()  # 启动时建表（需已手动创建数据库，或先跑 python backend/setup_db.py）
+
+    # 启动时清一次冷静期满期的注销账号；数据库不可用不影响服务启动
+    try:
+        with SessionLocal() as session:
+            purge_expired_deletions(session)
+    except OperationalError as error:
+        logger.warning("清理到期的注销账号失败: %s", error)
+
     yield
 
 
@@ -265,6 +275,50 @@ def get_current_user(session, authorization: str | None) -> tuple[User, AuthSess
     return user, auth_session
 
 
+def deletion_deadline(user: User) -> datetime | None:
+    """账号处于注销冷静期时返回清除时间，正常账号返回 None。"""
+    if user.deletion_requested_at is None:
+        return None
+    return user.deletion_requested_at + timedelta(days=DELETION_GRACE_DAYS)
+
+
+def to_user_out(user: User) -> UserOut:
+    """账号对外的统一表示形式。
+
+    刻意不暴露 deletion_requested_at：提交注销申请时该账号的所有会话都会失效，
+    客户端拿不到有效令牌，也就无从查询这个状态。冷静期的信息只通过
+    DELETE /api/auth/account 的返回告诉用户一次即可。
+    """
+    return UserOut(id=user.id, nickname=user.nickname, email=user.email)
+
+
+def purge_expired_deletions(session) -> int:
+    """清除冷静期已过、期间又没有重新登录的账号，返回清除数量。
+
+    重新登录会直接把 deletion_requested_at 清空（见 login），所以这里筛出来的
+    就是真正满期未归的账号。成绩是按昵称存的（scores 表没有指向 users 的外键），
+    必须显式删；会话也显式按 user_id 删，不依赖外键级联，行为更明确。
+    """
+    deadline = utcnow() - timedelta(days=DELETION_GRACE_DAYS)
+    expired = session.scalars(
+        select(User).where(
+            User.deletion_requested_at.is_not(None),
+            User.deletion_requested_at <= deadline,
+        )
+    ).all()
+
+    for user in expired:
+        session.execute(delete(Score).where(Score.name == user.nickname))
+        session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+        session.delete(user)
+
+    if expired:
+        session.commit()
+        logger.info("已清除 %d 个冷静期满期未登录的账号", len(expired))
+
+    return len(expired)
+
+
 class SlidingWindowLimiter:
     """进程内的滑动窗口限流。
 
@@ -400,7 +454,7 @@ def register(payload: RegisterIn, request: Request) -> AuthOut:
             session.rollback()
             raise HTTPException(status_code=409, detail="邮箱或昵称已被使用") from error
 
-        return AuthOut(token=token, user=UserOut(id=user.id, nickname=user.nickname, email=user.email))
+        return AuthOut(token=token, user=to_user_out(user))
 
 
 @app.post("/api/auth/login", response_model=AuthOut)
@@ -410,21 +464,29 @@ def login(payload: LoginIn, request: Request) -> AuthOut:
     email = normalize_email(payload.email)
 
     with SessionLocal() as session:
+        # 顺手清掉冷静期满期未登录的账号，避免它们继续占着昵称与邮箱
+        purge_expired_deletions(session)
+
         user = session.scalar(select(User).where(User.email == email))
         if not user or not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=401, detail="邮箱或密码不正确")
 
+        # 冷静期内重新登录 = 撤销注销申请
+        if user.deletion_requested_at is not None:
+            logger.info("账号 %s 在冷静期内重新登录，已撤销注销申请", user.nickname)
+            user.deletion_requested_at = None
+
         session.execute(delete(AuthSession).where(AuthSession.expires_at <= utcnow()))
         token = create_session(session, user)
         session.commit()
-        return AuthOut(token=token, user=UserOut(id=user.id, nickname=user.nickname, email=user.email))
+        return AuthOut(token=token, user=to_user_out(user))
 
 
 @app.get("/api/auth/me", response_model=UserOut)
 def current_user(authorization: str | None = Header(default=None)) -> UserOut:
     with SessionLocal() as session:
         user, _ = get_current_user(session, authorization)
-        return UserOut(id=user.id, nickname=user.nickname, email=user.email)
+        return to_user_out(user)
 
 
 @app.post("/api/auth/logout", status_code=204)
@@ -433,6 +495,34 @@ def logout(authorization: str | None = Header(default=None)) -> None:
         _, auth_session = get_current_user(session, authorization)
         session.delete(auth_session)
         session.commit()
+
+
+@app.delete("/api/auth/account", status_code=202)
+def request_account_deletion(authorization: str | None = Header(default=None)) -> dict:
+    """发起注销账号。
+
+    只登记申请并进入冷静期，不会立刻删数据——留出反悔的余地。
+    冷静期内重新登录即自动撤销；期满仍未登录才会真正清除账号、登录会话与历史成绩
+    （清理在服务启动与每次登录时进行）。
+
+    提交后该账号的所有登录会话会立即失效，客户端应清掉本地令牌——
+    这样用户下次想继续玩就必须重新登录，也就顺带撤销了注销申请，
+    不会出现"用旧会话一直玩、却在冷静期满后被静默清除"的情况。
+
+    重复调用只会刷新申请时间，不报错。
+    """
+    with SessionLocal() as session:
+        user, _ = get_current_user(session, authorization)
+        user.deletion_requested_at = utcnow()
+        session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+        session.commit()
+        deadline = deletion_deadline(user)
+
+    return {
+        "ok": True,
+        "grace_days": DELETION_GRACE_DAYS,
+        "delete_after": deadline,
+    }
 
 
 @app.post("/api/scores")

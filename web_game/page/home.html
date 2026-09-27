@@ -29,6 +29,7 @@
             <div class="currentUserCard" aria-label="当前登录用户">
                 <span class="currentUserLabel"><i aria-hidden="true"></i> CURRENT USER</span>
                 <strong id="currentUserName">--</strong>
+                <button id="deleteAccount" class="dangerLink" type="button">注销账号</button>
             </div>
         </header>
 
@@ -182,6 +183,32 @@
         </div>
     </section>
 </main>
+
+<dialog id="deleteDialog" class="modalDialog" aria-labelledby="deleteDialogTitle">
+    <div id="deleteConfirmPanel">
+        <h2 id="deleteDialogTitle">确认注销账号？</h2>
+        <p>提交后进入 <strong>15 天</strong>冷静期。期间只要重新登录，账号就会自动恢复；若 15 天内一直没有登录，账号将被永久清除，包括：</p>
+        <ul>
+            <li>账号、昵称与邮箱</li>
+            <li>当前登录状态</li>
+            <li>全部历史成绩</li>
+        </ul>
+        <p class="modalWarn">清除后无法恢复。</p>
+        <p id="deleteStatus" class="modalStatus" role="status" aria-live="polite"></p>
+        <div class="modalActions">
+            <button id="deleteCancel" type="button">取消</button>
+            <button id="deleteConfirm" type="button">确定注销</button>
+        </div>
+    </div>
+
+    <div id="deleteDonePanel" hidden>
+        <h2>注销申请已提交</h2>
+        <p id="deleteDoneText"></p>
+        <div class="modalActions">
+            <button id="deleteDone" type="button">返回首页</button>
+        </div>
+    </div>
+</dialog>
 
 <script src="../snake.js"></script>
 

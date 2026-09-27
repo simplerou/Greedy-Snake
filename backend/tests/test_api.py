@@ -8,12 +8,13 @@
     pytest -k TestScoreAntiCheat    # 只跑防作弊相关
 """
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
 from backend.main import (
+    DELETION_GRACE_DAYS,
     LOGIN_RATE_LIMIT,
     MIN_TICK_MS,
     REGISTER_RATE_LIMIT,
@@ -244,6 +245,133 @@ class TestCurrentUserAndLogout:
 
         db_session.expire_all()
         assert db_session.scalar(select(AuthSession)) is None
+
+
+class TestAccountDeletion:
+    """注销是「登记 + 15 天冷静期」，不是立即删除。
+
+    设计要点：提交申请后该账号的所有登录会话立即失效（用户被登出），
+    所以下次想继续玩必须重新登录 —— 而重新登录就等于撤销注销申请。
+    这样就避免了「用旧会话一直玩、却在冷静期满后被静默清除」的情况。
+    """
+
+    def test_requires_login(self, client):
+        assert client.delete("/api/auth/account").status_code == 401
+
+    def test_request_returns_grace_deadline(self, client, auth_headers):
+        response = client.delete("/api/auth/account", headers=auth_headers)
+        assert response.status_code == 202
+
+        body = response.json()
+        assert body["ok"] is True
+        assert body["grace_days"] == DELETION_GRACE_DAYS
+
+        deadline = datetime.fromisoformat(body["delete_after"])
+        expected = utcnow() + timedelta(days=DELETION_GRACE_DAYS)
+        assert abs((deadline - expected).total_seconds()) < 120
+
+    def test_request_invalidates_every_session(self, client, auth_headers):
+        assert client.delete("/api/auth/account", headers=auth_headers).status_code == 202
+        # 原令牌必须立刻失效，否则用户可以继续用旧会话游玩
+        assert client.get("/api/auth/me", headers=auth_headers).status_code == 401
+
+    def test_data_survives_during_grace_period(self, client, auth_headers, db_session):
+        client.delete("/api/auth/account", headers=auth_headers)
+
+        db_session.expire_all()
+        user = db_session.scalar(select(User))
+        assert user is not None, "冷静期内账号不该被删除"
+        assert user.deletion_requested_at is not None
+
+    def test_login_within_grace_period_cancels_deletion(self, client, auth_headers, db_session):
+        client.delete("/api/auth/account", headers=auth_headers)
+
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "abc12345"},
+        )
+        assert response.status_code == 200
+
+        db_session.expire_all()
+        assert db_session.scalar(select(User)).deletion_requested_at is None
+
+    def test_scores_are_kept_when_deletion_is_cancelled(self, client, auth_headers):
+        client.post("/api/scores", json=score_payload(), headers=auth_headers)
+        client.delete("/api/auth/account", headers=auth_headers)
+        client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "abc12345"},
+        )
+
+        assert len(client.get("/api/leaderboard/easy").json()) == 1
+
+    def test_can_request_again_after_re_login(self, client, auth_headers):
+        assert client.delete("/api/auth/account", headers=auth_headers).status_code == 202
+
+        login = client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "abc12345"},
+        )
+        new_headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
+        assert client.delete("/api/auth/account", headers=new_headers).status_code == 202
+
+    def _expire_grace_period(self, db_session):
+        """把注销申请时间往前拨到冷静期之外，模拟 15 天没登录。"""
+        db_session.expire_all()
+        user = db_session.scalar(select(User))
+        user.deletion_requested_at = utcnow() - timedelta(days=DELETION_GRACE_DAYS + 1)
+        db_session.commit()
+
+    def test_expired_grace_period_purges_account_scores_and_sessions(
+        self, client, auth_headers, db_session
+    ):
+        """期满后账号、成绩、会话一并清除——这正是隐私政策承诺的内容。"""
+        client.post("/api/scores", json=score_payload(), headers=auth_headers)
+        client.delete("/api/auth/account", headers=auth_headers)
+        self._expire_grace_period(db_session)
+
+        # 登录时会顺手清理到期的注销账号
+        client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "abc12345"},
+        )
+
+        db_session.expire_all()
+        assert db_session.scalar(select(User)) is None
+        assert db_session.scalars(select(Score)).all() == []
+        assert db_session.scalars(select(AuthSession)).all() == []
+        assert client.get("/api/leaderboard/easy").json() == []
+
+    def test_nickname_and_email_are_freed_after_purge(self, client, register, db_session):
+        """注销期满后，昵称与邮箱应该能被重新注册。"""
+        created = register()
+        headers = {"Authorization": f"Bearer {created.json()['token']}"}
+
+        client.delete("/api/auth/account", headers=headers)
+        self._expire_grace_period(db_session)
+        client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "abc12345"},
+        )
+
+        # 同昵称同邮箱重新注册应当成功
+        assert register().status_code == 201
+
+    def test_account_still_playable_between_request_and_expiry_of_session(
+        self, client, auth_headers
+    ):
+        """注销申请不会让仍在有效期的令牌变成"能登录但不能用"的怪状态。
+
+        提交后令牌即失效，因此这里的预期是 401 —— 明确记录这个行为，
+        免得以后有人改了会话逻辑却不知道这里依赖它。
+        """
+        client.delete("/api/auth/account", headers=auth_headers)
+        assert client.get("/api/auth/me", headers=auth_headers).status_code == 401
+        assert (
+            client.post("/api/scores", json=score_payload(), headers=auth_headers).status_code
+            == 401
+        )
 
 
 class TestSubmitScore:

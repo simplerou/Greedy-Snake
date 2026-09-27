@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
@@ -77,8 +77,46 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+def _add_missing_columns(base) -> None:
+    """给已存在的表补上模型里新增的列（只增不改）。
+
+    create_all 只负责建新表，不会修改已有表的结构——代码升级后模型多了列，
+    老库会因为缺列而查询直接报错。这里做一次增量同步：缺哪列补哪列，
+    已存在的列一律不动，也绝不删列或改类型。
+
+    只处理可空列：往已有数据的表里加非空列必须提供默认值，那种情况交给人工迁移，
+    这里只打日志提醒，不做危险操作。
+    """
+    inspector = inspect(engine)
+
+    for table in base.metadata.sorted_tables:
+        table_name = table.name
+        if not inspector.has_table(table_name):
+            continue
+
+        existing = {column["name"] for column in inspector.get_columns(table_name)}
+        for column in table.columns:
+            if column.name in existing:
+                continue
+
+            if not column.nullable:
+                logger.warning(
+                    "表 %s 缺少非空列 %s，需要手动迁移（本次已跳过）", table_name, column.name
+                )
+                continue
+
+            column_type = column.type.compile(engine.dialect)
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"ALTER TABLE `{table_name}` ADD COLUMN `{column.name}` {column_type}")
+                )
+            logger.info("已为表 %s 补上列 %s (%s)", table_name, column.name, column_type)
+
+
 def init_db() -> None:
-    """建表（已存在则跳过）。需要先在 MySQL 里创建数据库：
+    """建表，并给已有表补上模型新增的列。
+
+    需要先在 MySQL 里创建数据库：
 
         CREATE DATABASE greedy_snake CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -94,6 +132,7 @@ def init_db() -> None:
 
     try:
         Base.metadata.create_all(engine)
+        _add_missing_columns(Base)
     except OperationalError as error:
         logger.warning("数据库初始化失败，账号与排行榜接口将不可用: %s", error)
         return
