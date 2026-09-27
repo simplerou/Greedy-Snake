@@ -412,7 +412,9 @@ class TestPasswordReset:
     def _login(self, client, password, email=EMAIL):
         return client.post("/api/auth/login", json={"email": email, "password": password})
 
-    def test_request_does_not_reveal_whether_email_exists(self, client, register):
+    def test_request_does_not_reveal_whether_email_exists(
+        self, client, register, known_reset_code
+    ):
         register()  # 已注册
 
         known = self._request(client, self.EMAIL)
@@ -420,8 +422,12 @@ class TestPasswordReset:
         malformed = self._request(client, "not-an-email")
 
         assert known.status_code == unknown.status_code == malformed.status_code == 202
-        # 三者响应必须完全一致，否则可以用来枚举邮箱
+        # 三者响应必须完全一致，否则可以用来枚举邮箱。
+        # 返回体验证码的开发模式下这一点尤其要紧：如果只有已注册的邮箱才带 code，
+        # 「有没有 code」就等于「邮箱是否注册」。所以未注册时后端会返回一个
+        # 不落库的假验证码，结构完全一致（验证码固定后可直接比对整个响应体）。
         assert known.json() == unknown.json() == malformed.json()
+        assert known.json()["code"] == known_reset_code
 
     def test_unknown_email_creates_no_code(self, client, db_session):
         self._request(client, "nobody@example.com")
@@ -535,6 +541,85 @@ class TestPasswordReset:
         for _ in range(RESET_REQUEST_RATE_LIMIT[0]):
             assert self._request(client).status_code == 202
         assert self._request(client).status_code == 429
+
+
+class TestResetCodeExposure:
+    """验证码直接显示在页面上（开发模式）。
+
+    未配置 SMTP 时后端会把验证码一并放进响应，页面就能直接展示，省去翻服务端日志。
+    这是个明显的安全折衷——能调这个接口就能拿到任意账号的验证码——所以判定逻辑
+    必须盯紧：配了 SMTP 或显式关闭时，必须立刻停止返回。
+    """
+
+    EMAIL = "player@example.com"
+    NEW_PASSWORD = "newpass123"
+
+    def _request(self, client, email=EMAIL):
+        return client.post("/api/auth/password-reset/request", json={"email": email})
+
+    def _confirm(self, client, code, email=EMAIL):
+        return client.post(
+            "/api/auth/password-reset/confirm",
+            json={"email": email, "code": code, "new_password": self.NEW_PASSWORD},
+        )
+
+    def test_exposed_by_default_without_smtp(
+        self, client, register, known_reset_code, monkeypatch
+    ):
+        """默认配置（未配 SMTP）下返回验证码，而且这个码真能改密码。"""
+        monkeypatch.delenv("SMTP_HOST", raising=False)
+        monkeypatch.delenv("EXPOSE_RESET_CODE", raising=False)
+        register()
+
+        body = self._request(client).json()
+        assert body["delivery"] == "console"
+        assert body["code"] == known_reset_code
+
+        assert self._confirm(client, body["code"]).status_code == 200
+
+    def test_unregistered_email_gets_useless_code(self, client, monkeypatch, db_session):
+        """未注册的邮箱同样拿到一个验证码，但它没落库、必然用不了。
+
+        否则「响应里带不带 code」就等于「邮箱注册过没有」，枚举口子会重新打开。
+        """
+        monkeypatch.setattr("backend.main.generate_reset_code", lambda: "111111")
+
+        body = self._request(client, "nobody@example.com").json()
+        assert body.get("code") == "111111"
+
+        assert self._confirm(client, "111111", email="nobody@example.com").status_code == 422
+        assert db_session.scalars(select(PasswordReset)).all() == []
+
+    def test_hidden_when_smtp_is_configured(
+        self, client, register, known_reset_code, monkeypatch
+    ):
+        """配了 SMTP 说明是正式环境，一律不返回验证码。"""
+        register()
+        monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+        monkeypatch.delenv("EXPOSE_RESET_CODE", raising=False)
+        # 别真去连 SMTP（会等到超时），投递本身不是这个用例的关注点
+        monkeypatch.setattr("backend.main._send_reset_code", lambda *args, **kwargs: None)
+
+        body = self._request(client).json()
+        assert body["delivery"] == "smtp"
+        assert "code" not in body
+
+    @pytest.mark.parametrize("value", ["0", "false", "no", "off"])
+    def test_hidden_when_explicitly_disabled(self, client, register, monkeypatch, value):
+        register()
+        monkeypatch.setenv("EXPOSE_RESET_CODE", value)
+        assert "code" not in self._request(client).json()
+
+    def test_can_be_forced_on_explicitly(
+        self, client, register, known_reset_code, monkeypatch
+    ):
+        """显式打开时即便配了 SMTP 也会返回——给线上排查用，清楚风险再用。"""
+        register()
+        monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+        monkeypatch.setenv("EXPOSE_RESET_CODE", "1")
+        monkeypatch.setattr("backend.main._send_reset_code", lambda *args, **kwargs: None)
+
+        assert self._request(client).json()["code"] == known_reset_code
 
 
 class TestSubmitScore:

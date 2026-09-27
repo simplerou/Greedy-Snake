@@ -261,15 +261,35 @@ def reset_delivery_channel() -> str:
     return "smtp" if os.getenv("SMTP_HOST") else "console"
 
 
+def reset_code_exposed_to_client() -> bool:
+    """是否把验证码直接放进接口响应，让页面能显示出来。
+
+    ⚠️ 打开它意味着**任何人都能调用这个接口拿到任意账号的验证码**，进而重置
+    任意账号的密码——账号系统等于完全敞开。所以它只适用于本地开发，
+    公网部署必须保持关闭。
+
+    判定顺序：
+    1. 显式设置了 EXPOSE_RESET_CODE 时以它为准（1/true/yes/on 打开）
+    2. 未设置时取决于投递方式——没配 SMTP 说明是本地开发（验证码本来就只是
+       打印在服务端日志里，能看到日志的人同样能拿到），配了 SMTP 说明是正式
+       环境，一律不暴露
+    """
+    explicit = (os.getenv("EXPOSE_RESET_CODE") or "").strip().lower()
+    if explicit:
+        return explicit in {"1", "true", "yes", "on"}
+    return reset_delivery_channel() == "console"
+
+
 def deliver_reset_code(email: str, code: str) -> None:
     """把验证码交给用户。
 
     默认只打印到服务端日志——本地开发不需要任何邮箱配置就能跑通整个流程
-    （项目当前也没有配置 SMTP）。在 .env 里补上 SMTP_* 之后会自动改为真发邮件，
-    配置项见 _send_reset_code。
+    （项目当前也没有配置 SMTP）。这种模式下验证码还会随接口响应返回给前端，
+    页面直接显示出来（见 reset_code_exposed_to_client），省去翻日志。
+    在 .env 里补上 SMTP_* 之后会自动改为真发邮件，配置项见 _send_reset_code。
 
-    注意：控制台投递意味着任何能看到服务端日志的人都能重置任意账号的密码，
-    因此只适合本地开发；公网部署务必配置 SMTP。
+    注意：控制台投递意味着任何能看到服务端日志、或能调这个接口的人，
+    都能重置任意账号的密码，因此只适合本地开发；公网部署务必配置 SMTP。
     """
     smtp_host = os.getenv("SMTP_HOST")
     if not smtp_host:
@@ -622,17 +642,24 @@ def request_account_deletion(authorization: str | None = Header(default=None)) -
     }
 
 
-def reset_request_response() -> dict:
+def reset_request_response(code: str | None = None) -> dict:
     """申请验证码的统一响应。
 
     无论邮箱是否注册过都返回完全相同的内容，否则这个接口会被拿来枚举
     哪些邮箱注册过本服务。delivery 只取决于配置，不泄露账号是否存在。
+
+    code 仅在开发模式（见 reset_code_exposed_to_client）下才会被写进响应，
+    让页面直接把验证码显示出来，省去翻服务端日志的麻烦。为了不破坏上面那条
+    「响应统一」的性质，调用方在邮箱未注册时同样要传一个一次性假验证码进来。
     """
-    return {
+    body: dict = {
         "ok": True,
         "expires_in": RESET_CODE_TTL_MINUTES * 60,
         "delivery": reset_delivery_channel(),
     }
+    if code and reset_code_exposed_to_client():
+        body["code"] = code
+    return body
 
 
 @app.post("/api/auth/password-reset/request", status_code=202)
@@ -648,7 +675,8 @@ def request_password_reset(
 
     email = payload.email.strip().lower()
     if not EMAIL_PATTERN.fullmatch(email):
-        return reset_request_response()
+        # 同样给一个一次性假验证码，保持响应结构与其它分支一致
+        return reset_request_response(generate_reset_code())
 
     with SessionLocal() as session:
         # 顺手清掉已过期的验证码记录，避免表无限增长
@@ -658,7 +686,10 @@ def request_password_reset(
         if user is None:
             session.commit()
             logger.info("[找回密码] 邮箱 %s 未注册，静默忽略", email)
-            return reset_request_response()
+            # 未注册的邮箱也返回一个假验证码（不落库、必然校验失败），
+            # 否则「响应里有没有 code」就等价于「邮箱是否注册」，会把刚刚
+            # 堵上的枚举口子重新打开
+            return reset_request_response(generate_reset_code())
 
         now = utcnow()
         code = generate_reset_code()
@@ -688,7 +719,13 @@ def request_password_reset(
             # 投递失败也不能让调用方从响应里看出来，只记日志
             logger.warning("[找回密码] 验证码投递失败 (%s): %s", email, error)
 
-    return reset_request_response()
+    if reset_code_exposed_to_client():
+        logger.warning(
+            "[找回密码] 开发模式：验证码已随响应返回给客户端。"
+            "公网部署请配置 SMTP_* 或设置 EXPOSE_RESET_CODE=0，否则任何人都能重置任意账号密码。"
+        )
+
+    return reset_request_response(code)
 
 
 @app.post("/api/auth/password-reset/confirm")

@@ -390,6 +390,72 @@
             margin-top: 4px;
         }
 
+        /* ── 开发模式：直接显示验证码的小窗 ──────────────── */
+        .resetCodeBox {
+            display: grid;
+            gap: 10px;
+            padding: 14px 16px;
+            border: 1px dashed var(--green-dim);
+            background: rgba(105, 244, 154, .06);
+        }
+
+        .resetCodeHead {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .resetCodeTag {
+            padding: 2px 7px;
+            border: 1px solid var(--green);
+            color: var(--green);
+            font-size: 10px;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+
+        .resetCodeHint {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .resetCodeValue {
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--green);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: .28em;
+            line-height: 1.2;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .resetCodeValue:hover,
+        .resetCodeValue:focus-visible {
+            color: #8affad;
+            outline: none;
+        }
+
+        .resetCodeValue.isCopied {
+            color: var(--yellow);
+        }
+
+        .resetCodeNote {
+            margin: 0;
+            color: var(--dim);
+            font-size: 10.5px;
+            line-height: 1.7;
+        }
+
+        .resetCodeNote code {
+            color: var(--muted);
+            font-size: 10.5px;
+        }
+
         .authStatus {
             min-height: 20px;
             margin-top: 16px;
@@ -1059,6 +1125,14 @@
             <button class="authSubmit" id="resetSendCode" type="button">发送验证码 →</button>
 
             <div id="resetCodeStep" hidden>
+                <div class="resetCodeBox" id="resetCodeBox" hidden>
+                    <div class="resetCodeHead">
+                        <span class="resetCodeTag">开发模式</span>
+                        <span class="resetCodeHint">未配置邮箱服务，验证码直接显示在这里</span>
+                    </div>
+                    <button class="resetCodeValue" id="resetCodeValue" type="button" title="点击复制验证码">------</button>
+                    <p class="resetCodeNote">公网部署前请配置 <code>SMTP_*</code>，或设置 <code>EXPOSE_RESET_CODE=0</code>：否则任何人都能重置任意账号的密码。</p>
+                </div>
                 <label class="authField">
                     验证码
                     <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" title="请输入 6 位数字验证码" placeholder="6 位数字" required>
@@ -1384,6 +1458,8 @@
         const resetForm = document.getElementById("resetForm");
         const resetCodeStep = document.getElementById("resetCodeStep");
         const resetSendCodeButton = document.getElementById("resetSendCode");
+        const resetCodeBox = document.getElementById("resetCodeBox");
+        const resetCodeValue = document.getElementById("resetCodeValue");
         const guestActions = document.querySelectorAll(".guestAccountAction");
         const accountUser = document.getElementById("accountUser");
         const accountUserName = document.getElementById("accountUserName");
@@ -1557,12 +1633,29 @@
         // 回到「填邮箱」这一步：隐藏验证码区域、解锁邮箱输入框
         function resetResetForm() {
             resetCodeStep.hidden = true;
+            resetCodeBox.hidden = true;
+            resetCodeValue.textContent = "------";
+            resetCodeValue.classList.remove("isCopied");
             resetSendCodeButton.hidden = false;
             resetSendCodeButton.disabled = false;
             resetSendCodeButton.textContent = "发送验证码 →";
             const emailInput = resetForm.querySelector("input[name='email']");
             if (emailInput) emailInput.readOnly = false;
         }
+
+        // 验证码字号大、又是等宽字体，点一下直接复制省得手抄
+        resetCodeValue.addEventListener("click", async () => {
+            const code = resetCodeValue.textContent.trim();
+            if (!/^\d{6}$/.test(code)) return;
+            try {
+                await navigator.clipboard.writeText(code);
+                resetCodeValue.classList.add("isCopied");
+                setTimeout(() => resetCodeValue.classList.remove("isCopied"), 1200);
+            } catch (error) {
+                // 非安全上下文（例如用局域网 IP 以 http 访问）下浏览器会拒绝剪贴板，
+                // 静默忽略即可：验证码本来就显示在页面上，手抄同样能用
+            }
+        });
 
         async function sendResetCode() {
             const emailInput = resetForm.querySelector("input[name='email']");
@@ -1584,12 +1677,28 @@
                 // 锁定邮箱：改了就和新验证码对不上了
                 emailInput.readOnly = true;
 
-                // 后端无论邮箱是否注册都返回同样的结果，这里也只说"已发送"，
-                // 不区分账号是否存在
-                status.textContent = result.delivery === "console"
-                    ? `验证码已生成。当前未配置邮箱服务，请查看服务端日志（${Math.round(result.expires_in / 60)} 分钟内有效）。`
-                    : `验证码已发送到该邮箱，${Math.round(result.expires_in / 60)} 分钟内有效。`;
-                resetForm.querySelector("input[name='code']").focus();
+                const ttl = Math.round(result.expires_in / 60);
+                const codeInput = resetForm.querySelector("input[name='code']");
+
+                if (result.code) {
+                    // 开发模式：后端（未配置 SMTP_*）把验证码一并返回了，直接显示出来并自动填入，
+                    // 省去翻服务端日志这一趟
+                    resetCodeValue.textContent = result.code;
+                    resetCodeValue.classList.remove("isCopied");
+                    resetCodeBox.hidden = false;
+                    codeInput.value = result.code;
+                    status.textContent = `验证码已生成并自动填入，${ttl} 分钟内有效。`;
+                    resetForm.querySelector("input[name='newPassword']").focus();
+                } else {
+                    resetCodeBox.hidden = true;
+                    codeInput.value = "";
+                    // 后端无论邮箱是否注册都返回同样的结果，这里也只说"已发送"，
+                    // 不区分账号是否存在
+                    status.textContent = result.delivery === "console"
+                        ? `验证码已生成。当前未配置邮箱服务，请查看服务端日志（${ttl} 分钟内有效）。`
+                        : `验证码已发送到该邮箱，${ttl} 分钟内有效。`;
+                    codeInput.focus();
+                }
             } catch (error) {
                 resetSendCodeButton.disabled = false;
                 resetSendCodeButton.textContent = "发送验证码 →";
