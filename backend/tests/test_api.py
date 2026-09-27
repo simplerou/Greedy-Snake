@@ -18,11 +18,15 @@ from backend.main import (
     LOGIN_RATE_LIMIT,
     MIN_TICK_MS,
     REGISTER_RATE_LIMIT,
+    RESET_CODE_LENGTH,
+    RESET_MAX_ATTEMPTS,
+    RESET_REQUEST_RATE_LIMIT,
     SCORE_PER_FOOD,
     TIME_TOLERANCE,
+    generate_reset_code,
     utcnow,
 )
-from backend.models import AuthSession, Score, User
+from backend.models import AuthSession, PasswordReset, Score, User
 
 VALID_REGISTER = {
     "nickname": "测试玩家",
@@ -372,6 +376,165 @@ class TestAccountDeletion:
             client.post("/api/scores", json=score_payload(), headers=auth_headers).status_code
             == 401
         )
+
+
+class TestResetCodeGeneration:
+    def test_code_is_all_digits_with_expected_length(self):
+        for _ in range(20):
+            code = generate_reset_code()
+            assert len(code) == RESET_CODE_LENGTH
+            assert code.isdigit()
+
+    def test_codes_vary(self):
+        assert len({generate_reset_code() for _ in range(50)}) > 1
+
+
+class TestPasswordReset:
+    """找回密码：邮箱拿验证码 -> 用验证码设置新密码。
+
+    验证码默认写进服务端日志，用例通过 known_reset_code 固定成已知值，
+    不必去捞日志。
+    """
+
+    EMAIL = "player@example.com"
+    OLD_PASSWORD = "abc12345"
+    NEW_PASSWORD = "newpass123"
+
+    def _request(self, client, email=EMAIL):
+        return client.post("/api/auth/password-reset/request", json={"email": email})
+
+    def _confirm(self, client, code, password=NEW_PASSWORD, email=EMAIL):
+        return client.post(
+            "/api/auth/password-reset/confirm",
+            json={"email": email, "code": code, "new_password": password},
+        )
+
+    def _login(self, client, password, email=EMAIL):
+        return client.post("/api/auth/login", json={"email": email, "password": password})
+
+    def test_request_does_not_reveal_whether_email_exists(self, client, register):
+        register()  # 已注册
+
+        known = self._request(client, self.EMAIL)
+        unknown = self._request(client, "nobody@example.com")
+        malformed = self._request(client, "not-an-email")
+
+        assert known.status_code == unknown.status_code == malformed.status_code == 202
+        # 三者响应必须完全一致，否则可以用来枚举邮箱
+        assert known.json() == unknown.json() == malformed.json()
+
+    def test_unknown_email_creates_no_code(self, client, db_session):
+        self._request(client, "nobody@example.com")
+        assert db_session.scalars(select(PasswordReset)).all() == []
+
+    def test_only_the_latest_code_stays_active(self, client, register, db_session):
+        register()
+        self._request(client)
+        self._request(client)
+
+        db_session.expire_all()
+        records = db_session.scalars(select(PasswordReset)).all()
+        assert len(records) == 2
+        assert sum(1 for record in records if record.used_at is None) == 1
+
+    def test_code_is_not_stored_in_plaintext(self, client, register, db_session, known_reset_code):
+        register()
+        self._request(client)
+
+        db_session.expire_all()
+        record = db_session.scalar(select(PasswordReset))
+        assert record.code_hash != known_reset_code
+        assert len(record.code_hash) == 64  # sha256 十六进制摘要
+
+    def test_correct_code_sets_new_password(self, client, register, known_reset_code):
+        register()
+        self._request(client)
+
+        assert self._confirm(client, known_reset_code).status_code == 200
+        assert self._login(client, self.NEW_PASSWORD).status_code == 200
+        assert self._login(client, self.OLD_PASSWORD).status_code == 401
+
+    def test_reset_invalidates_all_existing_sessions(self, client, auth_headers, known_reset_code, db_session):
+        self._request(client)
+        assert client.get("/api/auth/me", headers=auth_headers).status_code == 200
+
+        assert self._confirm(client, known_reset_code).status_code == 200
+
+        db_session.expire_all()
+        assert db_session.scalars(select(AuthSession)).all() == []
+        assert client.get("/api/auth/me", headers=auth_headers).status_code == 401
+
+    def test_wrong_code_is_rejected_and_attempts_are_counted(
+        self, client, register, known_reset_code, db_session
+    ):
+        register()
+        self._request(client)
+
+        for expected in range(1, RESET_MAX_ATTEMPTS + 1):
+            assert self._confirm(client, "000000").status_code == 422
+
+            # 必须结束事务再查：MySQL 默认 REPEATABLE READ，事务一旦开启就会一直
+            # 看同一个快照，只 expire_all() 读不到别的连接刚提交的写入。
+            db_session.rollback()
+            assert db_session.scalar(select(PasswordReset)).attempts == expected
+
+    def test_code_is_locked_after_too_many_attempts(self, client, register, known_reset_code):
+        register()
+        self._request(client)
+
+        for _ in range(RESET_MAX_ATTEMPTS):
+            self._confirm(client, "000000")
+
+        # 达到上限后即便填对验证码也不再放行，必须重新申请
+        assert self._confirm(client, known_reset_code).status_code == 422
+        assert self._login(client, self.NEW_PASSWORD).status_code == 401
+
+    def test_expired_code_is_rejected(self, client, register, known_reset_code, db_session):
+        register()
+        self._request(client)
+
+        db_session.expire_all()
+        record = db_session.scalar(select(PasswordReset))
+        record.expires_at = utcnow() - timedelta(seconds=1)
+        db_session.commit()
+
+        assert self._confirm(client, known_reset_code).status_code == 422
+
+    def test_code_cannot_be_reused(self, client, register, known_reset_code):
+        register()
+        self._request(client)
+
+        assert self._confirm(client, known_reset_code).status_code == 200
+        assert self._confirm(client, known_reset_code, password="another123").status_code == 422
+
+    def test_new_request_invalidates_the_previous_code(self, client, register, known_reset_code, monkeypatch):
+        register()
+        self._request(client)
+
+        monkeypatch.setattr("backend.main.generate_reset_code", lambda: "654321")
+        self._request(client)
+
+        assert self._confirm(client, known_reset_code).status_code == 422
+        assert self._confirm(client, "654321").status_code == 200
+
+    def test_unknown_email_cannot_reset(self, client, known_reset_code):
+        assert self._confirm(client, known_reset_code, email="nobody@example.com").status_code == 422
+
+    def test_unrequested_code_is_rejected(self, client, register, known_reset_code):
+        register()  # 没有申请过验证码
+        assert self._confirm(client, known_reset_code).status_code == 422
+
+    @pytest.mark.parametrize("password", ["short", " " * 10])
+    def test_weak_new_password_is_rejected(self, client, register, known_reset_code, password):
+        register()
+        self._request(client)
+        assert self._confirm(client, known_reset_code, password=password).status_code == 422
+
+    def test_request_is_rate_limited(self, client, register):
+        register()
+        for _ in range(RESET_REQUEST_RATE_LIMIT[0]):
+            assert self._request(client).status_code == 202
+        assert self._request(client).status_code == 429
 
 
 class TestSubmitScore:

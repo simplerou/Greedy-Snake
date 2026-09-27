@@ -358,6 +358,38 @@
             outline: none;
         }
 
+        .authSubmit:disabled {
+            opacity: .6;
+            cursor: default;
+        }
+
+        .authLink {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+            padding: 6px 0;
+            border: 0;
+            background: none;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+        }
+
+        .authLink:hover,
+        .authLink:focus-visible {
+            color: var(--green);
+            outline: none;
+        }
+
+        #resetCodeStep {
+            display: grid;
+            gap: 14px;
+            margin-top: 4px;
+        }
+
         .authStatus {
             min-height: 20px;
             margin-top: 16px;
@@ -970,7 +1002,7 @@
         <h2 id="authTitle">欢迎回来</h2>
         <p class="authIntro" id="authIntro">登录后即可在不同设备继续挑战。</p>
 
-        <div class="authTabs" role="tablist" aria-label="登录或注册">
+        <div class="authTabs" id="authTabs" role="tablist" aria-label="登录或注册">
             <button class="authTab active" type="button" role="tab" aria-selected="true" data-auth-tab="login">登录</button>
             <button class="authTab" type="button" role="tab" aria-selected="false" data-auth-tab="register">注册</button>
         </div>
@@ -985,6 +1017,7 @@
                 <input name="password" type="password" autocomplete="current-password" minlength="8" placeholder="请输入至少 8 位密码" required>
             </label>
             <button class="authSubmit" type="submit">进入游戏 →</button>
+            <button class="authLink" id="forgotLink" type="button">忘记密码？</button>
         </form>
 
         <form class="authForm" id="registerForm" data-auth-form="register" hidden>
@@ -1016,6 +1049,28 @@
                 <a href="/privacy.html" target="_blank" rel="noopener">《隐私政策》</a>
             </div>
             <button class="authSubmit" type="submit">创建玩家账号 →</button>
+        </form>
+
+        <form class="authForm" id="resetForm" data-auth-form="reset" hidden>
+            <label class="authField">
+                注册邮箱
+                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+            </label>
+            <button class="authSubmit" id="resetSendCode" type="button">发送验证码 →</button>
+
+            <div id="resetCodeStep" hidden>
+                <label class="authField">
+                    验证码
+                    <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" title="请输入 6 位数字验证码" placeholder="6 位数字" required>
+                </label>
+                <label class="authField">
+                    新密码
+                    <input name="newPassword" type="password" autocomplete="new-password" minlength="8" pattern=".*\S.*" title="密码不能全是空格" placeholder="请输入至少 8 位密码" required>
+                </label>
+                <button class="authSubmit" type="submit">设置新密码 →</button>
+            </div>
+
+            <button class="authLink" id="resetBack" type="button">← 返回登录</button>
         </form>
 
         <p class="authStatus" id="authStatus" role="status" aria-live="polite"></p>
@@ -1325,6 +1380,10 @@
         const status = document.getElementById("authStatus");
         const tabs = document.querySelectorAll("[data-auth-tab]");
         const forms = document.querySelectorAll("[data-auth-form]");
+        const authTabsElement = document.getElementById("authTabs");
+        const resetForm = document.getElementById("resetForm");
+        const resetCodeStep = document.getElementById("resetCodeStep");
+        const resetSendCodeButton = document.getElementById("resetSendCode");
         const guestActions = document.querySelectorAll(".guestAccountAction");
         const accountUser = document.getElementById("accountUser");
         const accountUserName = document.getElementById("accountUserName");
@@ -1409,7 +1468,9 @@
             button.disabled = submitting;
             button.textContent = submitting
                 ? "正在连接..."
-                : form.id === "loginForm" ? "进入游戏账号 →" : "创建玩家账号 →";
+                : form.id === "loginForm" ? "进入游戏账号 →"
+                : form.id === "registerForm" ? "创建玩家账号 →"
+                : "设置新密码 →";
         }
 
         function openAuth(mode) {
@@ -1423,11 +1484,22 @@
             if (visibleForm && visibleForm.dataset.authForm !== mode) resetAuthForms();
 
             const isLogin = mode === "login";
-            title.textContent = isLogin ? "欢迎回来" : "创建玩家账号";
-            intro.textContent = isLogin
-                ? "登录后即可在不同设备继续挑战。"
-                : "注册账号，保留昵称与全球排行榜记录。";
+            const isReset = mode === "reset";
+
+            if (isReset) {
+                resetResetForm();
+                title.textContent = "找回密码";
+                intro.textContent = "填写注册邮箱，我们会给你一个验证码，用它设置新密码。";
+            } else {
+                title.textContent = isLogin ? "欢迎回来" : "创建玩家账号";
+                intro.textContent = isLogin
+                    ? "登录后即可在不同设备继续挑战。"
+                    : "注册账号，保留昵称与全球排行榜记录。";
+            }
             status.textContent = "";
+
+            // 找回密码是从登录页进入的子流程，不参与「登录 / 注册」的 tab 切换
+            authTabsElement.hidden = isReset;
 
             tabs.forEach(tab => {
                 const selected = tab.dataset.authTab === mode;
@@ -1474,10 +1546,58 @@
                 form.reset();
                 setSubmitting(form, false);
             });
+            resetResetForm();
             status.textContent = "";
         }
 
         dialog.addEventListener("close", resetAuthForms);
+
+        /* ── 找回密码 ─────────────────────────────────── */
+
+        // 回到「填邮箱」这一步：隐藏验证码区域、解锁邮箱输入框
+        function resetResetForm() {
+            resetCodeStep.hidden = true;
+            resetSendCodeButton.hidden = false;
+            resetSendCodeButton.disabled = false;
+            resetSendCodeButton.textContent = "发送验证码 →";
+            const emailInput = resetForm.querySelector("input[name='email']");
+            if (emailInput) emailInput.readOnly = false;
+        }
+
+        async function sendResetCode() {
+            const emailInput = resetForm.querySelector("input[name='email']");
+            if (!emailInput.reportValidity()) return;
+
+            resetSendCodeButton.disabled = true;
+            resetSendCodeButton.textContent = "正在发送...";
+            status.textContent = "";
+
+            try {
+                const result = await authRequest("/api/auth/password-reset/request", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: emailInput.value.trim() })
+                });
+
+                resetCodeStep.hidden = false;
+                resetSendCodeButton.hidden = true;
+                // 锁定邮箱：改了就和新验证码对不上了
+                emailInput.readOnly = true;
+
+                // 后端无论邮箱是否注册都返回同样的结果，这里也只说"已发送"，
+                // 不区分账号是否存在
+                status.textContent = result.delivery === "console"
+                    ? `验证码已生成。当前未配置邮箱服务，请查看服务端日志（${Math.round(result.expires_in / 60)} 分钟内有效）。`
+                    : `验证码已发送到该邮箱，${Math.round(result.expires_in / 60)} 分钟内有效。`;
+                resetForm.querySelector("input[name='code']").focus();
+            } catch (error) {
+                resetSendCodeButton.disabled = false;
+                resetSendCodeButton.textContent = "发送验证码 →";
+                status.textContent = error.message === "Failed to fetch"
+                    ? "无法连接账号服务，请确认 FastAPI 和 MySQL 已启动。"
+                    : error.message;
+            }
+        }
 
         document.getElementById("loginForm").addEventListener("submit", async event => {
             event.preventDefault();
@@ -1508,6 +1628,44 @@
                 setSubmitting(form, false);
             }
         });
+
+        /* ── 找回密码：提交验证码与新密码 ─────────────── */
+
+        resetForm.addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            setSubmitting(form, true);
+            status.textContent = "";
+
+            try {
+                await authRequest("/api/auth/password-reset/confirm", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: String(data.get("email") || "").trim(),
+                        code: String(data.get("code") || "").trim(),
+                        new_password: data.get("newPassword")
+                    })
+                });
+
+                form.reset();
+                resetResetForm();
+                // selectMode 会清空 status，所以提示语必须放在它之后
+                selectMode("login");
+                status.textContent = "密码已重置，请用新密码登录。";
+            } catch (error) {
+                status.textContent = error.message === "Failed to fetch"
+                    ? "无法连接账号服务，请确认 FastAPI 和 MySQL 已启动。"
+                    : error.message;
+            } finally {
+                setSubmitting(form, false);
+            }
+        });
+
+        document.getElementById("forgotLink").addEventListener("click", () => selectMode("reset"));
+        document.getElementById("resetBack").addEventListener("click", () => selectMode("login"));
+        resetSendCodeButton.addEventListener("click", sendResetCode);
 
         // ── 注册密码强度检测（弱 / 较强 / 强）──────────────
         (function initPasswordStrength() {

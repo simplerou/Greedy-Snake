@@ -52,7 +52,13 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 
 from backend.database import SessionLocal, engine, init_db  # noqa: E402
-from backend.main import app, login_limiter, register_limiter  # noqa: E402
+from backend.main import (  # noqa: E402
+    app,
+    login_limiter,
+    register_limiter,
+    reset_confirm_limiter,
+    reset_request_limiter,
+)
 from backend.models import Base  # noqa: E402
 
 
@@ -138,7 +144,21 @@ def _reset_rate_limiters():
     """
     login_limiter.reset()
     register_limiter.reset()
+    reset_request_limiter.reset()
+    reset_confirm_limiter.reset()
     yield
+
+
+@pytest.fixture
+def known_reset_code(monkeypatch):
+    """把找回密码的验证码固定成已知值。
+
+    默认投递方式是写进服务端日志，测试里没必要去捞日志——
+    直接替换生成函数，用例就能拿到确定的验证码。
+    """
+    code = "246813"
+    monkeypatch.setattr("backend.main.generate_reset_code", lambda: code)
+    return code
 
 
 @pytest.fixture

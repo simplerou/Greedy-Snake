@@ -28,11 +28,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .database import SessionLocal, init_db
-from .models import AuthSession, Score, User
+from .models import AuthSession, PasswordReset, Score, User
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -45,6 +45,13 @@ MAX_NAME_LEN = 12  # 与前端 normalizePlayerName 保持一致
 SESSION_DAYS = 30
 # 注销冷静期：发起注销后这么多天内重新登录即自动取消；期满仍未登录才清除账号
 DELETION_GRACE_DAYS = 15
+
+# ── 找回密码 ────────────────────────────────────────────
+RESET_CODE_TTL_MINUTES = 15           # 验证码有效期（分钟）
+RESET_CODE_LENGTH = 6                 # 验证码位数
+RESET_MAX_ATTEMPTS = 5                # 同一条验证码最多尝试次数，超过即作废
+RESET_REQUEST_RATE_LIMIT = (3, 300)   # 申请验证码：每 IP 5 分钟 3 次
+RESET_CONFIRM_RATE_LIMIT = (10, 300)  # 提交验证码：每 IP 5 分钟 10 次
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SCRYPT_N = 2**14
 SCRYPT_R = 8
@@ -169,6 +176,16 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordResetRequestIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class PasswordResetConfirmIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=RESET_CODE_LENGTH, max_length=RESET_CODE_LENGTH)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserOut(BaseModel):
     id: int
     nickname: str
@@ -225,6 +242,84 @@ def verify_password(password: str, stored: str) -> bool:
 
 def token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def generate_reset_code() -> str:
+    """生成 RESET_CODE_LENGTH 位纯数字验证码。
+
+    用 secrets 而不是 random：random 是可预测的伪随机数，
+    验证码这种安全相关的值必须来自密码学安全的随机源。
+    """
+    return f"{secrets.randbelow(10 ** RESET_CODE_LENGTH):0{RESET_CODE_LENGTH}d}"
+
+
+def reset_delivery_channel() -> str:
+    """当前会把验证码投递到哪里。
+
+    只看配置，与传入的邮箱无关——这样接口响应不会泄露某个邮箱是否注册过。
+    """
+    return "smtp" if os.getenv("SMTP_HOST") else "console"
+
+
+def deliver_reset_code(email: str, code: str) -> None:
+    """把验证码交给用户。
+
+    默认只打印到服务端日志——本地开发不需要任何邮箱配置就能跑通整个流程
+    （项目当前也没有配置 SMTP）。在 .env 里补上 SMTP_* 之后会自动改为真发邮件，
+    配置项见 _send_reset_code。
+
+    注意：控制台投递意味着任何能看到服务端日志的人都能重置任意账号的密码，
+    因此只适合本地开发；公网部署务必配置 SMTP。
+    """
+    smtp_host = os.getenv("SMTP_HOST")
+    if not smtp_host:
+        logger.info(
+            "[找回密码] %s 的验证码：%s（%d 分钟内有效；当前未配置 SMTP_*，仅打印在服务端日志）",
+            email,
+            code,
+            RESET_CODE_TTL_MINUTES,
+        )
+        return
+
+    _send_reset_code(email, code, smtp_host)
+
+
+def _send_reset_code(email: str, code: str, smtp_host: str) -> None:
+    """用 SMTP 发送验证码。
+
+    .env 需要提供（以 QQ 邮箱为例）：
+        SMTP_HOST=smtp.qq.com
+        SMTP_PORT=465            # 465 走 SSL，其他端口走 STARTTLS
+        SMTP_USER=你的邮箱
+        SMTP_PASSWORD=邮箱授权码   # 注意是授权码，不是邮箱登录密码
+        SMTP_FROM=发件人地址       # 缺省用 SMTP_USER
+    """
+    import smtplib
+    from email.message import EmailMessage
+
+    port = int(os.getenv("SMTP_PORT") or 465)
+    user = os.getenv("SMTP_USER") or ""
+    password = os.getenv("SMTP_PASSWORD") or ""
+    sender = os.getenv("SMTP_FROM") or user
+
+    message = EmailMessage()
+    message["Subject"] = "Greedy Snake 找回密码验证码"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        f"你的验证码是 {code}，{RESET_CODE_TTL_MINUTES} 分钟内有效。\n"
+        "如果不是你本人操作，忽略这封邮件即可。"
+    )
+
+    if port == 465:
+        with smtplib.SMTP_SSL(smtp_host, port, timeout=15) as server:
+            server.login(user, password)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(smtp_host, port, timeout=15) as server:
+            server.starttls()
+            server.login(user, password)
+            server.send_message(message)
 
 
 def utcnow() -> datetime:
@@ -373,6 +468,8 @@ class SlidingWindowLimiter:
 
 login_limiter = SlidingWindowLimiter(*LOGIN_RATE_LIMIT)
 register_limiter = SlidingWindowLimiter(*REGISTER_RATE_LIMIT)
+reset_request_limiter = SlidingWindowLimiter(*RESET_REQUEST_RATE_LIMIT)
+reset_confirm_limiter = SlidingWindowLimiter(*RESET_CONFIRM_RATE_LIMIT)
 
 
 def enforce_rate_limit(request: Request, limiter: SlidingWindowLimiter, message: str) -> None:
@@ -523,6 +620,127 @@ def request_account_deletion(authorization: str | None = Header(default=None)) -
         "grace_days": DELETION_GRACE_DAYS,
         "delete_after": deadline,
     }
+
+
+def reset_request_response() -> dict:
+    """申请验证码的统一响应。
+
+    无论邮箱是否注册过都返回完全相同的内容，否则这个接口会被拿来枚举
+    哪些邮箱注册过本服务。delivery 只取决于配置，不泄露账号是否存在。
+    """
+    return {
+        "ok": True,
+        "expires_in": RESET_CODE_TTL_MINUTES * 60,
+        "delivery": reset_delivery_channel(),
+    }
+
+
+@app.post("/api/auth/password-reset/request", status_code=202)
+def request_password_reset(
+    payload: PasswordResetRequestIn,
+    request: Request,
+) -> dict:
+    """申请找回密码：给注册邮箱发一个验证码。
+
+    邮箱格式不对、未注册、已注册，三种情况响应完全一致（见 reset_request_response）。
+    """
+    enforce_rate_limit(request, reset_request_limiter, "请求过于频繁，请稍后再试")
+
+    email = payload.email.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(email):
+        return reset_request_response()
+
+    with SessionLocal() as session:
+        # 顺手清掉已过期的验证码记录，避免表无限增长
+        session.execute(delete(PasswordReset).where(PasswordReset.expires_at <= utcnow()))
+
+        user = session.scalar(select(User).where(User.email == email))
+        if user is None:
+            session.commit()
+            logger.info("[找回密码] 邮箱 %s 未注册，静默忽略", email)
+            return reset_request_response()
+
+        now = utcnow()
+        code = generate_reset_code()
+
+        # 作废该账号此前所有未使用的验证码：保证同一时刻只有最新一条有效，
+        # 否则旧验证码在有效期内会一直是个可用的口子
+        session.execute(
+            update(PasswordReset)
+            .where(
+                PasswordReset.user_id == user.id,
+                PasswordReset.used_at.is_(None),
+            )
+            .values(used_at=now)
+        )
+        session.add(
+            PasswordReset(
+                user_id=user.id,
+                code_hash=token_digest(code),
+                expires_at=now + timedelta(minutes=RESET_CODE_TTL_MINUTES),
+            )
+        )
+        session.commit()
+
+        try:
+            deliver_reset_code(email, code)
+        except Exception as error:  # noqa: BLE001
+            # 投递失败也不能让调用方从响应里看出来，只记日志
+            logger.warning("[找回密码] 验证码投递失败 (%s): %s", email, error)
+
+    return reset_request_response()
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset(
+    payload: PasswordResetConfirmIn,
+    request: Request,
+) -> dict:
+    """用验证码设置新密码。"""
+    enforce_rate_limit(request, reset_confirm_limiter, "尝试过于频繁，请稍后再试")
+
+    if not payload.new_password.strip():
+        # 空格也算字符，只按长度校验会让整串空格的密码通过
+        raise HTTPException(status_code=422, detail="密码不能全是空格")
+
+    email = normalize_email(payload.email)
+    # 邮箱未注册与验证码不对返回同样的信息，避免账号枚举
+    invalid = HTTPException(status_code=422, detail="验证码不正确或已过期")
+
+    with SessionLocal() as session:
+        user = session.scalar(select(User).where(User.email == email))
+        if user is None:
+            raise invalid
+
+        record = session.scalar(
+            select(PasswordReset)
+            .where(
+                PasswordReset.user_id == user.id,
+                PasswordReset.used_at.is_(None),
+                PasswordReset.expires_at > utcnow(),
+            )
+            .order_by(PasswordReset.id.desc())
+            .limit(1)
+        )
+        if record is None or record.attempts >= RESET_MAX_ATTEMPTS:
+            raise invalid
+
+        if record.code_hash != token_digest(payload.code):
+            record.attempts += 1
+            session.commit()
+            if record.attempts >= RESET_MAX_ATTEMPTS:
+                logger.warning("[找回密码] %s 的验证码尝试次数达到上限，已作废", email)
+            raise invalid
+
+        record.used_at = utcnow()
+        user.password_hash = password_digest(payload.new_password)
+        # 改密后清空该账号的全部登录会话：旧密码可能已经泄露，
+        # 不能让它换来的令牌继续能用
+        session.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+        session.commit()
+
+    logger.info("[找回密码] %s 已设置新密码", email)
+    return {"ok": True}
 
 
 @app.post("/api/scores")
