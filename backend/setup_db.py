@@ -1,21 +1,21 @@
 """数据库一键初始化脚本。
 
 作用：
-1. 检查目标数据库是否可用（SQLite 自动创建文件，无需检查）
-2. 自动创建 MySQL 数据库（不存在时）；SQLite 无此步骤
+1. 测试能否连上 MySQL 服务器
+2. 自动创建 greedy_snake 数据库（不存在时）
 3. 自动建表（users / auth_sessions / scores）
 
 用法（在项目根目录）：
     python backend/setup_db.py
 
-默认使用 SQLite，不需要任何准备。想改用 MySQL 时先设置连接串再运行：
+连接串取自 .env 里的 DATABASE_URL，未配置时回落到本机 MySQL（root@localhost:3306）。
+密码不对时可临时用环境变量覆盖：
     PowerShell:  $env:DATABASE_URL = "mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4"
 """
 import sys
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 
 try:
     from .database import DATABASE_URL
@@ -31,13 +31,7 @@ MYSQL_HINT = (
 def main() -> None:
     print(f"目标连接串: {mask_password(DATABASE_URL)}")
 
-    url = make_url(DATABASE_URL)
-    if url.get_backend_name() == "sqlite":
-        print("[1/2] 使用 SQLite：无需数据库服务，也无需预先建库")
-        print(f"      数据库文件: {url.database}")
-        create_tables("[2/2]")
-    else:
-        setup_mysql()
+    setup_mysql()
 
     print("\n✅ 数据库全部就绪！接下来在项目根目录运行:")
     print("   uvicorn backend.main:app --reload")

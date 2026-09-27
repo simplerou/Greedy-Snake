@@ -1,6 +1,6 @@
 # 🐍 Greedy Snake · 经典贪吃蛇
 
-一个基于原生 HTML / CSS / JavaScript 的经典贪吃蛇网页游戏（前端零框架依赖），并附带 FastAPI 后端提供账号系统与全球排行榜。默认使用 SQLite，克隆下来不需要任何数据库服务就能直接跑；也可切换到 MySQL，并支持 Render 一键云部署。
+一个基于原生 HTML / CSS / JavaScript 的经典贪吃蛇网页游戏（前端零框架依赖），并附带 FastAPI 后端提供账号系统与全球排行榜，数据存 MySQL，支持 Render 一键云部署。
 
 ## ✨ 功能特性
 
@@ -44,12 +44,13 @@ Greedy-Snake/
 ├── backend/                  # FastAPI 后端
 │   ├── main.py               # 路由：健康检查、认证、成绩提交、全球排行榜
 │   ├── models.py             # 数据模型（SQLAlchemy）
-│   ├── database.py           # 数据库连接（默认 SQLite，可切 MySQL）
+│   ├── database.py           # 数据库连接（MySQL）
 │   ├── setup_db.py           # 数据库一键初始化脚本
+│   ├── tests/                # 后端接口测试（跑在独立的 MySQL 测试库上）
 │   └── requirements.txt      # Python 依赖
-├── greedy_snake.db           # SQLite 数据库文件（首次启动自动生成，已 gitignore）
+├── pytest.ini                # pytest 配置
 ├── render.yaml               # Render 云部署蓝图
-├── .env.example              # 环境变量模板（改用 MySQL 时复制为 .env）
+├── .env.example              # 环境变量模板（复制为 .env 后填写连接串）
 ├── .gitignore
 └── README.md
 ```
@@ -70,16 +71,22 @@ https://<你的服务名>.onrender.com
 
 **本地运行（改代码调试时使用）**
 
-游戏必须登录才能进入，所以本地也要启动后端。**不需要任何数据库服务**——默认使用 SQLite，数据库文件会在首次启动时自动创建为项目根目录的 `greedy_snake.db`：
+游戏必须登录才能进入，所以本地也要启动后端，并保证 **MySQL 服务正在运行**：
 
 ```bash
+# 1. 装依赖
 pip install -r backend/requirements.txt
+
+# 2. 建库 + 建表（会先测连接，密码不对会给出明确提示）
+python backend/setup_db.py
+
+# 3. 启动
 uvicorn backend.main:app --reload
 ```
 
 浏览器打开 http://127.0.0.1:8000/ ，注册一个账号即可开玩。
 
-> **改用 MySQL**：把 `.env.example` 复制为 `.env` 并填入连接串（`DATABASE_URL`），就会从 SQLite 切换到 MySQL。填入与 Render 部署相同的云数据库连接串时，本地与线上共享同一份全球榜单；连接本机 MySQL 时两份数据相互独立。不创建 `.env`（或把其中 `DATABASE_URL` 注释掉）时使用 SQLite。
+> **连接串来自哪里**：优先用环境变量 `DATABASE_URL`，其次读项目根目录的 `.env`；两者都没有时回落到代码默认值 `root@localhost:3306/greedy_snake`。把 `.env` 里的连接串换成与 Render 部署相同的那一条，本地就会直接读写云端库，和线上玩家共享同一份全球榜单。
 >
 > 注意：纯静态方式（`python -m http.server`）因缺少后端登录接口无法进入游戏，仅适合调试静态样式。
 
@@ -97,7 +104,7 @@ uvicorn backend.main:app --reload
 - **CSS3** — 暗色主题 UI + 响应式布局
 - **localStorage** — 本地数据持久化（排行榜 / 玩家昵称）
 - **FastAPI + SQLAlchemy** — 账号系统与全球排行榜后端
-- **SQLite（默认）/ MySQL（可选）** — 数据存储；SQLite 零配置开箱即用，MySQL 用于云端多玩家共享榜单
+- **MySQL** — 账号、登录会话与全球排行榜的存储
 
 ## 🧩 后端：账号与全球排行榜
 
@@ -105,16 +112,15 @@ uvicorn backend.main:app --reload
 
 ### 1. 准备数据库
 
-**SQLite（默认）**：什么都不用做，首次启动会自动创建 `greedy_snake.db`。
-
-**MySQL（可选）**：需要先手动建库，并在 `.env` 里配好连接串。
+需要 MySQL 服务运行中。库不存在时可以用附带的脚本一键创建：
 
 ```sql
+-- 手动建库的话（脚本会自动做这一步）
 CREATE DATABASE greedy_snake CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ```bash
-# 在项目根目录的 .env 里写入（密码含特殊字符需 URL 编码）
+# 在项目根目录的 .env 里写入连接串（密码含特殊字符需 URL 编码）
 # DATABASE_URL=mysql+pymysql://root:你的密码@localhost:3306/greedy_snake?charset=utf8mb4
 
 # 一键初始化：先测连接，再建库，最后建表
@@ -165,7 +171,15 @@ pytest -v                       # 显示每个用例的名字
 pytest -k TestScoreAntiCheat    # 只跑防作弊相关
 ```
 
-测试会自建一个临时 SQLite 库并逐用例清表，**不会碰开发用的 `greedy_snake.db`**。
+测试跑在**独立的 MySQL 测试库 `greedy_snake_test`** 上，不会碰开发库 `greedy_snake`：
+
+- 库不存在时会自动创建（只创建这个 `_test` 库）
+- 连接串默认把 `DATABASE_URL` 的库名换成 `greedy_snake_test`，账号密码沿用 `.env` 里的那份
+- 每个用例开始前清空所有表，跑完整个会话再把数据清干净
+- **安全阀**：库名不以 `_test` 结尾时直接拒绝运行——防止 `DATABASE_URL` 被误配成开发库或线上库后，测试把数据清空
+- 需要指向别的测试库时，用 `TEST_DATABASE_URL` 环境变量覆盖
+
+跑测试需要 MySQL 服务运行中，连不上会给出明确提示而不是一堆堆栈。
 
 > **成绩防作弊**：`POST /api/scores` 会做服务端一致性校验——得分必须等于「食物数 × 10」，食物数不能超过移动步数，移动步数与存活时间要对得上。纯前端游戏没法彻底防作弊（改 JS 就能伪造数据），这一层的作用是让"随手改个数字就霸榜"不再成立。
 >
@@ -177,7 +191,7 @@ pytest -k TestScoreAntiCheat    # 只跑防作弊相关
 
 在 Render 控制台选择 "New → Blueprint" 并导入本仓库即可一键部署；部署时在控制台填入你的 `DATABASE_URL`。三点注意：
 
-- **线上务必配置 `DATABASE_URL`**：不配置时会回落到默认的 SQLite，而 Render 的容器文件系统是临时的——每次重新部署或实例重启数据都会丢失，也无法多实例共享榜单。SQLite 只适合本地开发。
+- **线上务必配置 `DATABASE_URL`**：不配置时会回落到代码默认值 `root@localhost:3306`，而 Render 容器里没有 MySQL 服务，账号与排行榜接口会一律返回 503（服务本身能启动，静态页面照常访问）。
 - **密码中的特殊字符必须 URL 编码**：例如密码以 `@` 结尾时写成 `%40`，否则 `@` 会被当作连接串的分隔符导致域名解析失败。
 - **阿里云 RDS 需要配置白名单**：Render 的出口 IP 是动态的，无法逐个放通，只能在 RDS 白名单中添加 `0.0.0.0/0`。请务必使用高强度密码，并确保 `.env`、连接串不会进入版本库。
 

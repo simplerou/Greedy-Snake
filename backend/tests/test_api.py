@@ -67,11 +67,12 @@ class TestRegister:
         body = response.json()
         assert body["token_type"] == "bearer"
         assert len(body["token"]) > 20
-        assert body["user"] == {
-            "id": 1,
-            "nickname": "测试玩家",
-            "email": "player@example.com",
-        }
+
+        user = body["user"]
+        assert user["nickname"] == "测试玩家"
+        assert user["email"] == "player@example.com"
+        # 不断言 id 的具体数值：MySQL 的 AUTO_INCREMENT 不会因为清表而重置
+        assert isinstance(user["id"], int) and user["id"] > 0
 
     def test_password_is_hashed_not_stored_in_plaintext(self, client, db_session):
         client.post("/api/auth/register", json=VALID_REGISTER)

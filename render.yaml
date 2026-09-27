@@ -10,8 +10,8 @@ services:
     healthCheckPath: /api/health
     envVars:
       # 部署时在 Render 控制台填入云数据库连接串（当前使用阿里云 RDS MySQL）
-      # 务必填写：不填会回落到本地 SQLite，而 Render 容器文件系统是临时的，
-      # 每次重新部署/实例重启数据都会丢失，也无法多实例共享榜单。
+      # 务必填写：不填会回落到代码里的默认值 root@localhost:3306，而 Render 容器中
+      # 没有 MySQL 服务，届时账号与排行榜接口会返回 503（服务本身仍能启动）。
       # 密码含特殊字符需 URL 编码（@ 写成 %40）；同时记得在 RDS 白名单放通 Render 出口 IP
       - key: DATABASE_URL
         sync: false
