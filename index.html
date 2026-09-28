@@ -1073,20 +1073,25 @@
             <button class="authTab" type="button" role="tab" aria-selected="false" data-auth-tab="register">注册</button>
         </div>
 
-        <form class="authForm" id="loginForm" data-auth-form="login">
+        <!-- novalidate：关掉浏览器的原生校验气泡。
+             那些提示的文案和语言都由浏览器决定（中文系统上也可能出英文），
+             项目控制不了；而这里想要的是统一的中文提示，所以校验全部交给
+             自己的逻辑和后端接口，界面上只出现我们写得出来的那句话。
+             type="email" 保留，为的是让手机弹对键盘。 -->
+        <form class="authForm" id="loginForm" data-auth-form="login" novalidate>
             <label class="authField">
-                邮箱
-                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+                账号
+                <input name="email" type="email" autocomplete="username" placeholder="注册时填写的邮箱" required>
             </label>
             <label class="authField">
                 密码
-                <input name="password" type="password" autocomplete="current-password" minlength="8" placeholder="请输入至少 8 位密码" required>
+                <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
             </label>
             <button class="authSubmit" type="submit">进入游戏 →</button>
             <button class="authLink" id="forgotLink" type="button">忘记密码？</button>
         </form>
 
-        <form class="authForm" id="registerForm" data-auth-form="register" hidden>
+        <form class="authForm" id="registerForm" data-auth-form="register" novalidate hidden>
             <label class="authField">
                 玩家昵称
                 <input name="nickname" type="text" autocomplete="nickname" maxlength="12" pattern=".*\S.*" title="昵称不能全是空格" placeholder="最多 12 个字符" required>
@@ -1117,7 +1122,7 @@
             <button class="authSubmit" type="submit">创建玩家账号 →</button>
         </form>
 
-        <form class="authForm" id="resetForm" data-auth-form="reset" hidden>
+        <form class="authForm" id="resetForm" data-auth-form="reset" novalidate hidden>
             <label class="authField">
                 注册邮箱
                 <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
@@ -1502,6 +1507,10 @@
 
         const FIELD_LABELS = { nickname: "昵称", email: "邮箱", password: "密码" };
 
+        // 与后端 EMAIL_PATTERN 保持一致。表单都开了 novalidate，格式检查得自己做，
+        // 这样提示语只由这里决定，不会冒出浏览器那套跟着系统语言走的原生文案
+        const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
         // 后端校验失败时 detail 是数组，需转成可读文案，否则界面会显示 [object Object]
         function describeAuthError(detail) {
             if (!Array.isArray(detail)) return detail;
@@ -1659,7 +1668,13 @@
 
         async function sendResetCode() {
             const emailInput = resetForm.querySelector("input[name='email']");
-            if (!emailInput.reportValidity()) return;
+            // 表单开了 novalidate，reportValidity() 依旧会弹浏览器的原生气泡
+            // （文案和语言都不可控），所以这里自己检查格式并给中文提示
+            if (!EMAIL_PATTERN.test(emailInput.value.trim())) {
+                status.textContent = "请输入正确的邮箱地址，例如 player@example.com。";
+                emailInput.focus();
+                return;
+            }
 
             resetSendCodeButton.disabled = true;
             resetSendCodeButton.textContent = "正在发送...";
@@ -1850,6 +1865,12 @@
                 return;
             }
 
+            const email = (data.get("email") || "").trim();
+            if (!EMAIL_PATTERN.test(email)) {
+                status.textContent = "请输入正确的邮箱地址，例如 player@example.com。";
+                return;
+            }
+
             const password = data.get("password") || "";
             if (!password.trim()) {
                 status.textContent = "密码不能全是空格，请输入有效密码。";
@@ -1861,7 +1882,7 @@
                 return;
             }
 
-            // 浏览器原生 required 已会拦截，这里再兜一层，避免绕过属性直接提交
+            // 表单开了 novalidate，复选框的 required 不再自动拦截，这里必须自己查
             if (!document.getElementById("agreeTerms").checked) {
                 status.textContent = "请先阅读并同意《用户协议》与《隐私政策》。";
                 return;
@@ -1876,14 +1897,13 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         nickname,
-                        email: data.get("email"),
+                        email,
                         password,
                         agreed: document.getElementById("agreeTerms").checked
                     })
                 });
 
                 // 注册成功后不自动登录：回到登录页并预填账号密码，让玩家自己点登录
-                const email = data.get("email") || "";
                 form.reset();
                 selectMode("login");
                 const loginForm = document.getElementById("loginForm");

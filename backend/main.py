@@ -11,6 +11,7 @@
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import base64
 import hashlib
 import hmac
@@ -42,9 +43,15 @@ ROOT = Path(__file__).resolve().parent.parent
 DIFFICULTIES = {"easy", "medium", "hard"}
 MAX_SCORE = 1_000_000
 MAX_NAME_LEN = 12  # 与前端 normalizePlayerName 保持一致
+MIN_PASSWORD_LENGTH = 8
 SESSION_DAYS = 30
 # 注销冷静期：发起注销后这么多天内重新登录即自动取消；期满仍未登录才清除账号
 DELETION_GRACE_DAYS = 15
+
+# 登录失败的统一提示。刻意只说「账号或密码」，不区分到底哪一项不对：
+# 一旦按失败原因给出不同提示，这个接口就成了「哪些邮箱注册过」的查询工具。
+# 也不写「邮箱」——用户记住的是自己的账号，未必记得注册时填的是哪个邮箱地址。
+LOGIN_FAILED_MESSAGE = "账号或密码不正确"
 
 # ── 找回密码 ────────────────────────────────────────────
 RESET_CODE_TTL_MINUTES = 15           # 验证码有效期（分钟）
@@ -161,7 +168,7 @@ class RegisterIn(BaseModel):
     # 长度上限在去掉首尾空格之后校验，否则"  合法昵称  "会被误判超长
     nickname: str = Field(max_length=MAX_NAME_LEN)
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)
     # 是否已同意用户协议与隐私政策；默认 False，由接口给出中文提示
     agreed: bool = False
 
@@ -172,8 +179,14 @@ class RegisterIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=8, max_length=128)
+    # 同样不设 min_length：留空、只填了几个字符，都算"凭证不对"，
+    # 由接口统一回一句「账号或密码不正确」，而不是让 pydantic 抛出
+    # 「长度不足」这类分项提示
+    email: str = Field(max_length=254)
+    # 刻意不设 min_length：注册时的密码长度规则不该在登录入口拦人。
+    # 登录要做的只是"凭证对不对"，填短了同样是凭证错误，
+    # 由接口统一回一句「账号或密码不正确」，而不是甩出长度校验的细节。
+    password: str = Field(max_length=128)
 
 
 class PasswordResetRequestIn(BaseModel):
@@ -238,6 +251,19 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(actual, expected)
     except (ValueError, TypeError):
         return False
+
+
+@lru_cache(maxsize=1)
+def _dummy_password_hash() -> str:
+    """给"账号不存在"分支用的一次性口令哈希。
+
+    login 里如果发现邮箱没注册就立刻返回，响应会明显快于"账号存在但密码错"
+    （后者要跑一次 scrypt，几十毫秒），这个时间差足以被用来枚举哪些邮箱注册过。
+    所以在那个分支里也拿它跑一次等价的计算，把耗时抹平。
+
+    惰性生成：导入模块时不必为它跑一次 scrypt。
+    """
+    return password_digest("timing-attack-placeholder")
 
 
 def token_digest(token: str) -> str:
@@ -578,18 +604,29 @@ def register(payload: RegisterIn, request: Request) -> AuthOut:
 def login(payload: LoginIn, request: Request) -> AuthOut:
     enforce_rate_limit(request, login_limiter, "登录尝试过于频繁，请稍后再试")
 
-    email = normalize_email(payload.email)
+    email = payload.email.strip().lower()
+    password = payload.password
+
+    # 邮箱格式都不对、或密码短到不可能是有效密码，直接按凭证错误处理。
+    # 登录入口不给「邮箱格式不正确」这类分项提示——用户要分辨的是
+    # "能不能登进去"，不是自己填错的是哪一格。
+    if not EMAIL_PATTERN.fullmatch(email) or len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=401, detail=LOGIN_FAILED_MESSAGE)
 
     with SessionLocal() as session:
         # 顺手清掉冷静期满期未登录的账号，避免它们继续占着昵称与邮箱
         purge_expired_deletions(session)
 
         user = session.scalar(select(User).where(User.email == email))
-        if not user or not verify_password(payload.password, user.password_hash):
-            # 邮箱不存在与密码错误必须返回完全相同的提示，否则可以用来枚举
-            # 哪些邮箱注册过本服务。文案用「账号」而不是「邮箱」，与用户对
-            # 登录凭据的认知一致（他记的是账号，不一定是注册用的邮箱地址）。
-            raise HTTPException(status_code=401, detail="账号或密码不正确")
+
+        # 账号不存在时也跑一次等价的口令校验，抹平与"密码错误"之间的耗时差，
+        # 否则响应时间就成了「这个邮箱注册过没有」的测谎仪
+        if user is None:
+            verify_password(password, _dummy_password_hash())
+            raise HTTPException(status_code=401, detail=LOGIN_FAILED_MESSAGE)
+
+        if not verify_password(password, user.password_hash):
+            raise HTTPException(status_code=401, detail=LOGIN_FAILED_MESSAGE)
 
         # 冷静期内重新登录 = 撤销注销申请
         if user.deletion_requested_at is not None:

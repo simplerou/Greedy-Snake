@@ -228,6 +228,32 @@ class TestLogin:
         )
         assert response.json()["detail"] == "账号或密码不正确"
 
+    @pytest.mark.parametrize("email", ["444", "not-an-email", "", "a@b", "   "])
+    def test_malformed_account_is_reported_as_bad_credentials(self, client, email):
+        """账号格式不对时也只说「账号或密码不正确」。
+
+        原先这种情况返回 422「邮箱格式不正确」，而前端表单的 type="email"
+        会先弹浏览器自己的英文提示，请求根本发不出来——于是界面上出现的是
+        "Please include an '@' in the email address"，跟项目想给的中文提示完全无关。
+        现在表单关了原生校验，格式检查挪到这里，统一回同一句话。
+        """
+        response = client.post(
+            "/api/auth/login", json={"email": email, "password": "abc12345"}
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "账号或密码不正确"
+
+    @pytest.mark.parametrize("password", ["", "abc", "1234567"])
+    def test_short_password_is_reported_as_bad_credentials(self, client, register, password):
+        """密码短到不可能是有效密码时同样只回一句，而不是甩出长度校验细节。"""
+        register()
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": password},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "账号或密码不正确"
+
 
 class TestCurrentUserAndLogout:
     def test_me_returns_current_user(self, client, auth_headers):
