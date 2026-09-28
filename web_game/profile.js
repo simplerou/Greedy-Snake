@@ -52,6 +52,10 @@
     const sessionListElement = document.getElementById("sessionList");
     const sessionStatusElement = document.getElementById("sessionStatus");
     const logoutButton = document.getElementById("logoutButton");
+    const logoutDialog = document.getElementById("logoutDialog");
+    const logoutCancelButton = document.getElementById("logoutCancel");
+    const logoutConfirmButton = document.getElementById("logoutConfirm");
+    const logoutStatusElement = document.getElementById("logoutStatus");
 
     const deleteAccountButton = document.getElementById("deleteAccount");
     const deleteDialog = document.getElementById("deleteDialog");
@@ -816,12 +820,30 @@
 
     /* ── 退出登录 ─────────────────────────────────────────── */
 
-    logoutButton.addEventListener("click", async () => {
-        logoutButton.disabled = true;
+    /* 顶栏那个按钮只负责把确认弹窗打开。退出会让这台设备立刻需要重新输一遍密码，
+     * 手滑点到就得重来，值得先问一句。
+     *
+     * 用原生 <dialog> 的 showModal()，所以 Esc 键关闭天然就等于"取消"，
+     * 不需要额外监听键盘。 */
+    logoutButton.addEventListener("click", () => {
+        logoutCancelButton.disabled = false;
+        logoutConfirmButton.disabled = false;
+        logoutStatusElement.textContent = "";
+        logoutDialog.showModal();
+    });
+
+    logoutCancelButton.addEventListener("click", () => logoutDialog.close());
+
+    logoutConfirmButton.addEventListener("click", async () => {
+        logoutConfirmButton.disabled = true;
+        logoutCancelButton.disabled = true;
+        logoutStatusElement.textContent = "正在退出…";
+
         try {
             await api("/api/auth/logout", { method: "POST" });
         } catch (error) {
-            // 服务端没删掉也无妨：本地令牌照样清，用户看到的就是"已退出"
+            // 服务端没删掉也无妨：本地令牌照样清，用户看到的就是"已退出"。
+            // 而且用户已经确认过一次了，不该因为网络问题把人卡在弹窗里。
         }
         clearToken();
         window.location.replace("../../");

@@ -926,6 +926,15 @@ canvas{
     font-weight:700;
 }
 
+/* 弹窗里的补充说明：比正文弱一档，不跟主要信息抢注意力 */
+.modalDialog .modalNote{
+    margin-bottom:14px;
+    padding-left:10px;
+    border-left:1px solid var(--line);
+    color:var(--dim);
+    font-size:12px;
+}
+
 .modalStatus{
     min-height:18px;
     margin-bottom:4px;
@@ -961,7 +970,10 @@ canvas{
     cursor:default;
 }
 
-.modalActions #deleteConfirm{
+/* 「退出登录」与「注销账号」都用红色确认：前者终结当前会话，后者终结账号，
+ * 都属于需要用户停一下再点的操作。与顶栏那个 hover 变红的退出按钮呼应。 */
+.modalActions #deleteConfirm,
+.modalActions #logoutConfirm{
     border-color:var(--red);
     color:var(--red);
 }
