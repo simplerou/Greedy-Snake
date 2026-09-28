@@ -114,6 +114,15 @@
             font-weight: 800;
             text-overflow: ellipsis;
             white-space: nowrap;
+            /* 它同时是指向用户中心的链接 */
+            text-decoration: none;
+            transition: color .16s ease;
+        }
+
+        .accountUserName:hover,
+        .accountUserName:focus-visible {
+            color: #8affad;
+            outline: none;
         }
 
         .logoutButton {
@@ -1056,7 +1065,7 @@
     <button class="accountButton guestAccountAction" type="button" data-auth-open="login">登录</button>
     <button class="accountButton primary guestAccountAction" type="button" data-auth-open="register">注册</button>
     <div class="accountUser" id="accountUser" hidden>
-        <span class="accountUserName" id="accountUserName"></span>
+        <a class="accountUserName" id="accountUserName" href="/web_game/page/profile.html" title="进入用户中心"></a>
         <button class="logoutButton" id="logoutButton" type="button">退出</button>
     </div>
 </nav>

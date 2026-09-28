@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#07100b">
+    <title>用户中心 · Greedy Snake</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+
+<body class="authPending">
+
+<div class="authGate" id="authGate" role="status" aria-live="polite">
+    <span class="authGateMark">●</span>
+    <strong>正在验证玩家账号</strong>
+    <small>AUTHENTICATING...</small>
+</div>
+
+<main class="profileShell">
+    <header class="profileHeader">
+        <a class="profileBack" href="home.html">← 返回游戏</a>
+        <h1><span aria-hidden="true">●</span> 用户中心</h1>
+        <button class="profileLogout" id="logoutButton" type="button">退出登录</button>
+    </header>
+
+    <section class="profileIdentity" aria-label="账号概览">
+        <span class="profileAvatar" id="profileAvatar" aria-hidden="true">·</span>
+        <div class="profileIdentityText">
+            <strong id="profileNickname">加载中…</strong>
+            <span id="profileEmail"></span>
+        </div>
+        <dl class="profileFacts">
+            <div>
+                <dt>加入时间</dt>
+                <dd id="profileJoined">--</dd>
+            </div>
+            <div>
+                <dt>总场次</dt>
+                <dd id="profileTotalGames">--</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="profileBlock" aria-labelledby="statsTitle">
+        <div class="sectionHeading">
+            <div>
+                <span class="sectionIndex">01</span>
+                <h2 id="statsTitle">我的战绩</h2>
+            </div>
+            <span class="sectionNote">MY RECORDS</span>
+        </div>
+
+        <div class="bestGrid" id="bestGrid"></div>
+
+        <p class="profileEmpty" id="statsEmpty" hidden>还没有成绩记录，回游戏玩一局就会出现在这里。</p>
+
+        <div class="recordWrap" id="recordWrap" hidden>
+            <table class="recordTable">
+                <thead>
+                <tr>
+                    <th scope="col">难度</th>
+                    <th scope="col">得分</th>
+                    <th scope="col">食物</th>
+                    <th scope="col">步数</th>
+                    <th scope="col">存活</th>
+                    <th scope="col">时间</th>
+                </tr>
+                </thead>
+                <tbody id="recordBody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="profileBlock" aria-labelledby="accountTitle">
+        <div class="sectionHeading">
+            <div>
+                <span class="sectionIndex">02</span>
+                <h2 id="accountTitle">账号信息</h2>
+            </div>
+            <span class="sectionNote">ACCOUNT</span>
+        </div>
+
+        <form class="profileForm" id="nicknameForm" novalidate>
+            <h3 class="profileFormTitle">修改昵称</h3>
+            <p class="profileFormHint">昵称同时也是榜单上的显示名，改完之后历史成绩会一起跟过去。</p>
+            <div class="profileFormRow">
+                <label class="profileField">
+                    新昵称
+                    <input name="nickname" type="text" maxlength="12" autocomplete="nickname" placeholder="最多 12 个字符" aria-required="true">
+                </label>
+                <button class="profileSubmit" type="submit">保存昵称 →</button>
+            </div>
+        </form>
+
+        <form class="profileForm" id="passwordForm" novalidate>
+            <h3 class="profileFormTitle">修改密码</h3>
+            <p class="profileFormHint">改完之后，这台设备之外的登录都会退出。</p>
+            <label class="profileField">
+                当前密码
+                <input name="currentPassword" type="password" autocomplete="current-password" placeholder="请输入当前密码" aria-required="true">
+            </label>
+            <label class="profileField">
+                新密码
+                <input name="newPassword" type="password" autocomplete="new-password" placeholder="至少 8 位" aria-required="true">
+            </label>
+            <label class="profileField">
+                确认新密码
+                <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-required="true">
+            </label>
+            <button class="profileSubmit" type="submit">修改密码 →</button>
+        </form>
+
+        <p class="profileStatus" id="accountStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="profileBlock" aria-labelledby="sessionsTitle">
+        <div class="sectionHeading">
+            <div>
+                <span class="sectionIndex">03</span>
+                <h2 id="sessionsTitle">登录设备</h2>
+            </div>
+            <span class="sectionNote">SESSIONS</span>
+        </div>
+
+        <p class="profileFormHint">这里列出所有还能登录这个账号的设备。发现不认识的设备，直接退出它。</p>
+        <ul class="sessionList" id="sessionList"></ul>
+        <p class="profileStatus" id="sessionStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="profileBlock dangerBlock" aria-labelledby="dangerTitle">
+        <div class="sectionHeading">
+            <div>
+                <span class="sectionIndex">04</span>
+                <h2 id="dangerTitle">危险操作</h2>
+            </div>
+            <span class="sectionNote">DANGER ZONE</span>
+        </div>
+
+        <p class="dangerCopy">注销账号后进入 <strong>15 天</strong>冷静期。期间只要重新登录，账号就会自动恢复。</p>
+        <button class="dangerButton" id="deleteAccount" type="button">注销账号</button>
+    </section>
+</main>
+
+<dialog id="deleteDialog" class="modalDialog" aria-labelledby="deleteDialogTitle">
+    <div id="deleteConfirmPanel">
+        <h2 id="deleteDialogTitle">确认注销账号？</h2>
+        <p>提交后进入 <strong>15 天</strong>冷静期。期间只要重新登录，账号就会自动恢复；若 15 天内一直没有登录，账号将被永久清除，包括：</p>
+        <ul>
+            <li>账号、昵称与邮箱</li>
+            <li>当前登录状态</li>
+            <li>全部历史成绩</li>
+        </ul>
+        <p class="modalWarn">清除后无法恢复。</p>
+        <p id="deleteStatus" class="modalStatus" role="status" aria-live="polite"></p>
+        <div class="modalActions">
+            <button id="deleteCancel" type="button">取消</button>
+            <button id="deleteConfirm" type="button">确定注销</button>
+        </div>
+    </div>
+
+    <div id="deleteDonePanel" hidden>
+        <h2>注销申请已提交</h2>
+        <p id="deleteDoneText"></p>
+        <div class="modalActions">
+            <button id="deleteDone" type="button">返回首页</button>
+        </div>
+    </div>
+</dialog>
+
+<script src="../profile.js"></script>
+
+</body>
+</html>
