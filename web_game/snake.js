@@ -11,6 +11,8 @@ const currentDifficultyElement = document.getElementById("currentDifficulty");
 const backToMenuElement = document.getElementById("backToMenu");
 const currentUserNameElement = document.getElementById("currentUserName");
 const userAvatarElement = document.getElementById("userAvatar");
+const userAvatarImageElement = document.getElementById("userAvatarImage");
+const userAvatarLetterElement = document.getElementById("userAvatarLetter");
 const leaderboardListElement = document.getElementById("leaderboardList");
 const resultOverlayElement = document.getElementById("resultOverlay");
 const resultScoreElement = document.getElementById("resultScore");
@@ -67,9 +69,8 @@ async function requireAuthentication() {
         const user = await response.json();
         currentPlayerName = normalizePlayerName(user.nickname);
         currentUserNameElement.textContent = currentPlayerName;
-        // 用户卡片上的圆形徽章：取昵称首个字符，中文就是一个字、英文是首字母。
-        // 整张卡片是指向用户中心的链接，"注销账号"之类的操作都收在那里面。
-        userAvatarElement.textContent = avatarLetter(currentPlayerName);
+        // 整张卡片是指向用户中心的链接，头像也在那里上传
+        applyUserAvatar(user.avatar_url, currentPlayerName);
         document.body.classList.remove("authPending");
     } catch (error) {
         try {
@@ -91,6 +92,25 @@ function avatarLetter(nickname) {
     if (!text) return "·";
     return Array.from(text)[0].toUpperCase();
 }
+
+/* 有头像就显示图片，没有就回到首字。
+ * 图片取不到（被移除、网络问题）也要退回首字，不能在卡片上留个破图图标。 */
+function applyUserAvatar(avatarUrl, nickname) {
+    userAvatarLetterElement.textContent = avatarLetter(nickname);
+    userAvatarImageElement.hidden = !avatarUrl;
+    userAvatarElement.dataset.hasImage = avatarUrl ? "true" : "false";
+
+    if (avatarUrl) {
+        userAvatarImageElement.src = avatarUrl;
+    } else {
+        userAvatarImageElement.removeAttribute("src");
+    }
+}
+
+userAvatarImageElement.addEventListener("error", () => {
+    userAvatarImageElement.hidden = true;
+    userAvatarElement.dataset.hasImage = "false";
+});
 
 
 const DIFFICULTIES = {

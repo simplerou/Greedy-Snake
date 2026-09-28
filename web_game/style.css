@@ -172,6 +172,7 @@ button{
     place-items:center;
     width:40px;
     height:40px;
+    overflow:hidden;
     border:1px solid var(--line-bright);
     background:rgba(105,244,154,.08);
     color:var(--green);
@@ -179,6 +180,18 @@ button{
     font-weight:700;
     line-height:1;
     transition:border-color .16s ease;
+}
+
+.userAvatar img{
+    display:block;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+/* 有头像时让首字让位：它仍留在 DOM 里，只是不显示 */
+.userAvatar[data-has-image="true"]{
+    font-size:0;
 }
 
 .currentUserCard:hover .userAvatar,
@@ -1214,16 +1227,87 @@ canvas{
 }
 
 .profileAvatar{
+    position:relative;
     display:grid;
     place-items:center;
-    width:64px;
-    height:64px;
+    width:76px;
+    height:76px;
+    padding:0;
+    overflow:hidden;
     border:1px solid var(--line-bright);
     background:var(--panel-raised);
     color:var(--green);
-    font-size:26px;
+    font:inherit;
+    font-size:30px;
     font-weight:700;
     line-height:1;
+    cursor:pointer;
+    transition:border-color .16s ease;
+}
+
+.profileAvatar:hover,
+.profileAvatar:focus-visible{
+    border-color:var(--green);
+    outline:none;
+}
+
+.profileAvatar:disabled{
+    opacity:.6;
+    cursor:progress;
+}
+
+.profileAvatar img{
+    display:block;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+/* 有头像时让首字让位：它仍留在 DOM 里，只是不显示 */
+.profileAvatar[data-has-image="true"]{
+    font-size:0;
+}
+
+.profileAvatarOverlay{
+    position:absolute;
+    inset:auto 0 0 0;
+    padding:3px 0;
+    background:rgba(3,6,4,.8);
+    color:var(--green);
+    font-size:10px;
+    letter-spacing:.1em;
+    opacity:0;
+    transition:opacity .16s ease;
+}
+
+.profileAvatar:hover .profileAvatarOverlay,
+.profileAvatar:focus-visible .profileAvatarOverlay{
+    opacity:1;
+}
+
+.profileLinkButton{
+    justify-self:start;
+    padding:0;
+    border:0;
+    background:none;
+    color:var(--dim);
+    font:inherit;
+    font-size:11.5px;
+    text-decoration:underline;
+    text-underline-offset:3px;
+    cursor:pointer;
+    transition:color .16s ease;
+}
+
+.profileLinkButton:hover,
+.profileLinkButton:focus-visible{
+    color:var(--red);
+    outline:none;
+}
+
+.profileAvatarStatus{
+    grid-column:1 / -1;
+    min-height:0;
 }
 
 .profileIdentityText{

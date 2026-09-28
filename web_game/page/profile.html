@@ -25,11 +25,19 @@
     </header>
 
     <section class="profileIdentity" aria-label="账号概览">
-        <span class="profileAvatar" id="profileAvatar" aria-hidden="true">·</span>
+        <button class="profileAvatar" id="avatarButton" type="button" title="点击更换头像">
+            <img id="profileAvatarImage" alt="" hidden>
+            <span id="profileAvatarLetter" aria-hidden="true">·</span>
+            <span class="profileAvatarOverlay" aria-hidden="true">更换</span>
+        </button>
+        <input id="avatarInput" type="file" accept="image/*" hidden>
+
         <div class="profileIdentityText">
             <strong id="profileNickname">加载中…</strong>
             <span id="profileEmail"></span>
+            <button class="profileLinkButton" id="avatarRemove" type="button" hidden>移除头像</button>
         </div>
+
         <dl class="profileFacts">
             <div>
                 <dt>加入时间</dt>
@@ -40,6 +48,8 @@
                 <dd id="profileTotalGames">--</dd>
             </div>
         </dl>
+
+        <p class="profileStatus profileAvatarStatus" id="avatarStatus" role="status" aria-live="polite"></p>
     </section>
 
     <section class="profileBlock" aria-labelledby="statsTitle">

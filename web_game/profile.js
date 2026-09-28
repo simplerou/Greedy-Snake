@@ -13,11 +13,18 @@
     const API_BASE = "";   // 同源托管时留空，与 snake.js 保持一致
     const AUTH_TOKEN_KEY = "greedySnakeAuthToken";
     const PASSWORD_MIN_LENGTH = 8;  // 与后端 MIN_PASSWORD_LENGTH 保持一致
+    const AVATAR_SIZE = 256;        // 头像裁剪后的成品边长，在上传前就压到这么小
 
     const DIFFICULTY_NAMES = { easy: "低等", medium: "中等", hard: "高等" };
     const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
 
-    const avatarElement = document.getElementById("profileAvatar");
+    const avatarButton = document.getElementById("avatarButton");
+    const avatarInput = document.getElementById("avatarInput");
+    const avatarImageElement = document.getElementById("profileAvatarImage");
+    const avatarLetterElement = document.getElementById("profileAvatarLetter");
+    const avatarRemoveButton = document.getElementById("avatarRemove");
+    const avatarStatusElement = document.getElementById("avatarStatus");
+
     const nicknameElement = document.getElementById("profileNickname");
     const emailElement = document.getElementById("profileEmail");
     const joinedElement = document.getElementById("profileJoined");
@@ -196,12 +203,28 @@
 
     /* ── 账号概览 ─────────────────────────────────────────── */
 
+    function applyAvatar(avatarUrl, nickname) {
+        // 首字始终写好：没有头像时它就是头像本身，有头像时被 CSS 让位
+        avatarLetterElement.textContent = avatarLetter(nickname);
+
+        avatarImageElement.hidden = !avatarUrl;
+        avatarButton.dataset.hasImage = avatarUrl ? "true" : "false";
+        avatarRemoveButton.hidden = !avatarUrl;
+
+        if (avatarUrl) {
+            avatarImageElement.src = avatarUrl;
+        } else {
+            // 把 src 也清掉，否则移除头像后浏览器还留着上一张
+            avatarImageElement.removeAttribute("src");
+        }
+    }
+
     function applyUser(user) {
         currentUser = user;
         nicknameElement.textContent = user.nickname;
         emailElement.textContent = user.email;
         joinedElement.textContent = formatDate(user.created_at);
-        avatarElement.textContent = avatarLetter(user.nickname);
+        applyAvatar(user.avatar_url, user.nickname);
         // 昵称输入框预填当前值，改起来只需补几个字
         nicknameForm.elements.nickname.value = user.nickname;
         document.title = `${user.nickname} · 用户中心`;
@@ -212,6 +235,143 @@
         applyUser(user);
         document.body.classList.remove("authPending");
     }
+
+    /* ── 上传头像 ─────────────────────────────────────────── */
+
+    /* 图片在浏览器里就裁好压好再上传：既省流量，也让后端不必依赖图像处理库
+     * （Pillow 不在 requirements 里，也不打算为此加一个依赖）。 */
+
+    function loadImageSource(file) {
+        // createImageBitmap 更快，也不用经过一次 object URL；老浏览器回退到 Image
+        if (typeof createImageBitmap === "function") {
+            return createImageBitmap(file);
+        }
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const image = new Image();
+            image.onload = () => {
+                URL.revokeObjectURL(url);
+                resolve(image);
+            };
+            image.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error("这张图片读不出来，换一张试试。"));
+            };
+            image.src = url;
+        });
+    }
+
+    function canvasToBlob(canvas) {
+        return new Promise((resolve, reject) => {
+            const encode = type => canvas.toBlob(
+                blob => (blob ? resolve(blob) : reject(new Error("图片处理失败，换一张试试。"))),
+                type,
+                0.86,
+            );
+            // WebP 体积明显更小；个别浏览器不支持时退回 JPEG
+            if (canvas.toDataURL("image/webp").startsWith("data:image/webp")) {
+                encode("image/webp");
+            } else {
+                encode("image/jpeg");
+            }
+        });
+    }
+
+    async function buildAvatarBlob(file) {
+        if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name || "")) {
+            // 后端也会拒，这里先拦一道，省一趟往返
+            throw new Error("不支持 SVG，请换一张 JPEG / PNG / WebP 图片。");
+        }
+        if (file.type && !file.type.startsWith("image/")) {
+            throw new Error("请选择图片文件。");
+        }
+
+        const source = await loadImageSource(file);
+        const side = Math.min(source.width, source.height);
+        if (!side) {
+            throw new Error("这张图片读不出来，换一张试试。");
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = AVATAR_SIZE;
+        canvas.height = AVATAR_SIZE;
+        const context = canvas.getContext("2d");
+        context.imageSmoothingQuality = "high";
+        // 居中裁成正方形再缩放。直接拉成正方形会把头像压变形。
+        context.drawImage(
+            source,
+            (source.width - side) / 2,
+            (source.height - side) / 2,
+            side,
+            side,
+            0,
+            0,
+            AVATAR_SIZE,
+            AVATAR_SIZE,
+        );
+        // ImageBitmap 占的是显存，用完要显式释放
+        if (typeof source.close === "function") source.close();
+
+        return canvasToBlob(canvas);
+    }
+
+    function setUpAvatarBusy(busy) {
+        avatarButton.disabled = busy;
+        avatarRemoveButton.disabled = busy;
+    }
+
+    async function uploadAvatar(file) {
+        setUpAvatarBusy(true);
+        setStatus(avatarStatusElement, "正在处理图片…");
+
+        try {
+            const blob = await buildAvatarBlob(file);
+            const user = await api("/api/auth/avatar", {
+                method: "PUT",
+                headers: { "Content-Type": blob.type },
+                body: blob,
+            });
+            applyUser(user);
+            setStatus(
+                avatarStatusElement,
+                `头像已更新（${Math.max(1, Math.round(blob.size / 1024))} KB）。`,
+                "ok",
+            );
+        } catch (error) {
+            setStatus(avatarStatusElement, error.message, "error");
+        } finally {
+            setUpAvatarBusy(false);
+        }
+    }
+
+    avatarButton.addEventListener("click", () => avatarInput.click());
+
+    avatarInput.addEventListener("change", async () => {
+        const file = avatarInput.files && avatarInput.files[0];
+        // 先把 input 清空：否则连着选同一个文件不会再触发 change
+        avatarInput.value = "";
+        if (file) await uploadAvatar(file);
+    });
+
+    // 图片取不到就退回首字，别在页面上留一个破图图标
+    avatarImageElement.addEventListener("error", () => {
+        avatarImageElement.hidden = true;
+        avatarButton.dataset.hasImage = "false";
+    });
+
+    avatarRemoveButton.addEventListener("click", async () => {
+        setUpAvatarBusy(true);
+        setStatus(avatarStatusElement, "正在移除…");
+
+        try {
+            applyUser(await api("/api/auth/avatar", { method: "DELETE" }));
+            setStatus(avatarStatusElement, "已恢复成默认头像。", "ok");
+        } catch (error) {
+            setStatus(avatarStatusElement, error.message, "error");
+        } finally {
+            setUpAvatarBusy(false);
+        }
+    });
 
     /* ── 我的战绩 ─────────────────────────────────────────── */
 
