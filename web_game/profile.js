@@ -27,6 +27,7 @@
 
     const cropDialog = document.getElementById("cropDialog");
     const cropStageElement = document.getElementById("cropStage");
+    const cropFrameElement = document.getElementById("cropFrame");
     const cropImageElement = document.getElementById("cropImage");
     const cropZoomElement = document.getElementById("cropZoom");
     const cropStatusElement = document.getElementById("cropStatus");
@@ -287,17 +288,29 @@
 
     /* ── 裁剪 ─────────────────────────────────────────────── */
 
-    function cropViewport() {
-        // 裁剪框是正方形，宽度就是边长
-        return cropStageElement.clientWidth;
+    /* 位置关系：
+     *   - .cropStage 是图片的定位容器，(0,0) 是它内容区的左上角
+     *   - .cropFrame 在 stage 内居中，边长 frame，左上角在 (fx, fy)
+     *   - 图片左上角相对 stage 是 (offsetX, offsetY)，缩放 scale
+     *   - 约束是「图片必须盖住 frame」，而不是盖住 stage —— 所以框外还能看到一部分
+     *     图片，用户能看清自己正在裁的是哪一块
+     *
+     * 框的尺寸与位置都从 DOM 现读，不跟 CSS 里那串百分比重复一遍。
+     */
+    function cropGeometry() {
+        const stageRect = cropStageElement.getBoundingClientRect();
+        const frameRect = cropFrameElement.getBoundingClientRect();
+        return {
+            frame: frameRect.width,
+            fx: frameRect.left - stageRect.left,
+            fy: frameRect.top - stageRect.top,
+        };
     }
 
-    // 让图片刚好盖满裁剪框所需的缩放比；比它更小就会露出背景
+    // 让图片刚好盖住裁剪框所需的缩放比；比它更小框里就会露出背景
     function cropBaseScale() {
-        return Math.max(
-            cropViewport() / crop.image.naturalWidth,
-            cropViewport() / crop.image.naturalHeight,
-        );
+        const { frame } = cropGeometry();
+        return Math.max(frame / crop.image.naturalWidth, frame / crop.image.naturalHeight);
     }
 
     function cropScale() {
@@ -305,13 +318,14 @@
     }
 
     function clampCropOffset() {
-        const view = cropViewport();
+        const { frame, fx, fy } = cropGeometry();
         const scale = cropScale();
-        // 图片必须始终盖满裁剪框：偏移量被夹在 [view - 显示尺寸, 0]
-        const minX = view - crop.image.naturalWidth * scale;
-        const minY = view - crop.image.naturalHeight * scale;
-        crop.offsetX = Math.min(0, Math.max(minX, crop.offsetX));
-        crop.offsetY = Math.min(0, Math.max(minY, crop.offsetY));
+        // 图片相对框的偏移应夹在 [frame - 显示尺寸, 0]，
+        // 再加回框自身的位置，就是相对 stage 的偏移
+        const minX = fx + frame - crop.image.naturalWidth * scale;
+        const minY = fy + frame - crop.image.naturalHeight * scale;
+        crop.offsetX = Math.min(fx, Math.max(minX, crop.offsetX));
+        crop.offsetY = Math.min(fy, Math.max(minY, crop.offsetY));
     }
 
     function renderCrop() {
@@ -323,20 +337,23 @@
     }
 
     function centerCrop() {
-        const view = cropViewport();
+        const { frame, fx, fy } = cropGeometry();
         const scale = cropScale();
-        crop.offsetX = (view - crop.image.naturalWidth * scale) / 2;
-        crop.offsetY = (view - crop.image.naturalHeight * scale) / 2;
+        crop.offsetX = fx + (frame - crop.image.naturalWidth * scale) / 2;
+        crop.offsetY = fy + (frame - crop.image.naturalHeight * scale) / 2;
     }
 
     /* 缩放。anchor 是屏幕坐标，缩放时那一点下面的内容不会跑掉；
      * 不传就以裁剪框中心为锚点。 */
     function setCropZoom(nextZoom, anchor) {
         const rect = cropStageElement.getBoundingClientRect();
-        const view = cropViewport();
-        const point = anchor || { x: rect.left + view / 2, y: rect.top + view / 2 };
+        const { frame, fx, fy } = cropGeometry();
+        const point = anchor || {
+            x: rect.left + fx + frame / 2,
+            y: rect.top + fy + frame / 2,
+        };
 
-        // 锚点在裁剪框内的位置
+        // 锚点在 stage 内的位置
         const px = point.x - rect.left;
         const py = point.y - rect.top;
         // 它当前对应图片上的哪个点
@@ -351,6 +368,9 @@
         crop.offsetX = px - imageX * newScale;
         crop.offsetY = py - imageY * newScale;
 
+        // 上面算出的位置可能越界（比如从大倍率缩回小倍率时），接下来的 renderCrop
+        // 会把它夹回来。这时候锚点保持会让位给「框不能露白」——这是有意的：
+        // 宁可内容轻微位移，也不能在框里看到背景。
         cropZoomElement.value = String(crop.zoom);
         renderCrop();
     }
@@ -470,7 +490,7 @@
     });
 
     function renderCropBlob() {
-        const view = cropViewport();
+        const { frame, fx, fy } = cropGeometry();
         const scale = cropScale();
 
         const canvas = document.createElement("canvas");
@@ -478,12 +498,14 @@
         canvas.height = AVATAR_SIZE;
         const context = canvas.getContext("2d");
         context.imageSmoothingQuality = "high";
+        // 裁剪框左上角对应图片上的 (fx - offsetX, fy - offsetY)，边长为 frame，
+        // 全部除以 scale 换算回原图坐标
         context.drawImage(
             crop.image,
-            -crop.offsetX / scale,
-            -crop.offsetY / scale,
-            view / scale,
-            view / scale,
+            (fx - crop.offsetX) / scale,
+            (fy - crop.offsetY) / scale,
+            frame / scale,
+            frame / scale,
             0,
             0,
             AVATAR_SIZE,

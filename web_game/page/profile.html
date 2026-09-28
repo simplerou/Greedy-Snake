@@ -154,10 +154,11 @@
 
 <dialog id="cropDialog" class="modalDialog cropDialog" aria-labelledby="cropTitle">
     <h2 id="cropTitle">调整头像</h2>
-    <p class="cropHint">拖动图片调整位置，滚轮或下面的滑块缩放。方框里看到的就是最终效果。</p>
+    <p class="cropHint">拖动图片调整位置，滚轮或下面的滑块缩放。绿色方框内的部分就是最终头像。</p>
 
     <div class="cropStage" id="cropStage">
         <img id="cropImage" alt="待裁剪的头像" draggable="false">
+        <span class="cropFrame" id="cropFrame" aria-hidden="true"></span>
     </div>
 
     <label class="cropZoom">
