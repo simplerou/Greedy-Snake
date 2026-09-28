@@ -586,7 +586,10 @@ def login(payload: LoginIn, request: Request) -> AuthOut:
 
         user = session.scalar(select(User).where(User.email == email))
         if not user or not verify_password(payload.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="邮箱或密码不正确")
+            # 邮箱不存在与密码错误必须返回完全相同的提示，否则可以用来枚举
+            # 哪些邮箱注册过本服务。文案用「账号」而不是「邮箱」，与用户对
+            # 登录凭据的认知一致（他记的是账号，不一定是注册用的邮箱地址）。
+            raise HTTPException(status_code=401, detail="账号或密码不正确")
 
         # 冷静期内重新登录 = 撤销注销申请
         if user.deletion_requested_at is not None:

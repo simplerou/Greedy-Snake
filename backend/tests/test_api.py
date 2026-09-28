@@ -215,6 +215,19 @@ class TestLogin:
         )
         assert wrong_password.json()["detail"] == unknown_email.json()["detail"]
 
+    def test_failure_message_says_account_not_email(self, client, register):
+        """失败提示统一用「账号或密码不正确」。
+
+        刻意不写「邮箱」：用户记住的是自己的账号，未必记得注册时填的是哪个
+        邮箱地址，提示里出现「邮箱」反而容易让人以为输错了字段。
+        """
+        register()
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "player@example.com", "password": "wrong-password"},
+        )
+        assert response.json()["detail"] == "账号或密码不正确"
+
 
 class TestCurrentUserAndLogout:
     def test_me_returns_current_user(self, client, auth_headers):
