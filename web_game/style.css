@@ -1310,6 +1310,67 @@ canvas{
     min-height:0;
 }
 
+/* ── 头像裁剪 ── */
+
+.cropDialog{
+    width:min(420px, calc(100vw - 32px));
+    /* 小屏或横屏时内容可能超高，让它自己滚 */
+    overflow-y:auto;
+}
+
+.cropHint{
+    margin:0 0 14px;
+    color:var(--muted);
+    font-size:11.5px;
+    line-height:1.7;
+}
+
+.cropStage{
+    position:relative;
+    width:min(100%, 320px);
+    margin:0 auto 16px;
+    aspect-ratio:1;
+    overflow:hidden;
+    border:1px solid var(--line-bright);
+    background:#050807;
+    cursor:grab;
+    /* 关掉浏览器默认的平移/缩放手势，否则手机上拖动会被页面滚动抢走 */
+    touch-action:none;
+    user-select:none;
+}
+
+.cropStage.is-dragging{
+    cursor:grabbing;
+}
+
+.cropStage img{
+    position:absolute;
+    top:0;
+    left:0;
+    /* 防止被 max-width:100% 之类的规则限制住，那样就缩放不上去了 */
+    max-width:none;
+    /* 缩放锚在左上角，偏移量的换算才简单（见 profile.js） */
+    transform-origin:0 0;
+    /* 拖动由 .cropStage 统一接管，图片本身不接收指针事件 */
+    pointer-events:none;
+    -webkit-user-drag:none;
+}
+
+.cropZoom{
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr);
+    align-items:center;
+    gap:12px;
+    margin-bottom:14px;
+    color:var(--muted);
+    font-size:12px;
+}
+
+.cropZoom input[type="range"]{
+    width:100%;
+    accent-color:var(--green);
+}
+
 .profileIdentityText{
     display:grid;
     gap:6px;

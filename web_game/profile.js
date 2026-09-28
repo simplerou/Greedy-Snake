@@ -25,6 +25,15 @@
     const avatarRemoveButton = document.getElementById("avatarRemove");
     const avatarStatusElement = document.getElementById("avatarStatus");
 
+    const cropDialog = document.getElementById("cropDialog");
+    const cropStageElement = document.getElementById("cropStage");
+    const cropImageElement = document.getElementById("cropImage");
+    const cropZoomElement = document.getElementById("cropZoom");
+    const cropStatusElement = document.getElementById("cropStatus");
+    const cropCancelButton = document.getElementById("cropCancel");
+    const cropResetButton = document.getElementById("cropReset");
+    const cropConfirmButton = document.getElementById("cropConfirm");
+
     const nicknameElement = document.getElementById("profileNickname");
     const emailElement = document.getElementById("profileEmail");
     const joinedElement = document.getElementById("profileJoined");
@@ -238,28 +247,17 @@
 
     /* ── 上传头像 ─────────────────────────────────────────── */
 
-    /* 图片在浏览器里就裁好压好再上传：既省流量，也让后端不必依赖图像处理库
-     * （Pillow 不在 requirements 里，也不打算为此加一个依赖）。 */
+    /* 图片在浏览器里裁好压好再上传：既省流量，也让后端不必依赖图像处理库
+     * （Pillow 不在 requirements 里，也不打算为此加一个依赖）。
+     *
+     * 坐标换算统一按这套来：
+     *   - 裁剪框 .cropStage 是正方形，边长记作 view
+     *   - 图片以「左上角为原点」做 scale，偏移量 offset 是图片左上角相对裁剪框左上角的位置
+     *   - 于是裁剪框左上角对应图片上的 (-offsetX / scale, -offsetY / scale)，边长 view / scale
+     */
 
-    function loadImageSource(file) {
-        // createImageBitmap 更快，也不用经过一次 object URL；老浏览器回退到 Image
-        if (typeof createImageBitmap === "function") {
-            return createImageBitmap(file);
-        }
-        return new Promise((resolve, reject) => {
-            const url = URL.createObjectURL(file);
-            const image = new Image();
-            image.onload = () => {
-                URL.revokeObjectURL(url);
-                resolve(image);
-            };
-            image.onerror = () => {
-                URL.revokeObjectURL(url);
-                reject(new Error("这张图片读不出来，换一张试试。"));
-            };
-            image.src = url;
-        });
-    }
+    const CROP_MAX_ZOOM = 4;
+    let crop = null;   // 正在裁剪时的状态；为 null 表示没在裁剪
 
     function canvasToBlob(canvas) {
         return new Promise((resolve, reject) => {
@@ -277,7 +275,7 @@
         });
     }
 
-    async function buildAvatarBlob(file) {
+    function validateAvatarFile(file) {
         if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name || "")) {
             // 后端也会拒，这里先拦一道，省一趟往返
             throw new Error("不支持 SVG，请换一张 JPEG / PNG / WebP 图片。");
@@ -285,47 +283,227 @@
         if (file.type && !file.type.startsWith("image/")) {
             throw new Error("请选择图片文件。");
         }
+    }
 
-        const source = await loadImageSource(file);
-        const side = Math.min(source.width, source.height);
-        if (!side) {
-            throw new Error("这张图片读不出来，换一张试试。");
+    /* ── 裁剪 ─────────────────────────────────────────────── */
+
+    function cropViewport() {
+        // 裁剪框是正方形，宽度就是边长
+        return cropStageElement.clientWidth;
+    }
+
+    // 让图片刚好盖满裁剪框所需的缩放比；比它更小就会露出背景
+    function cropBaseScale() {
+        return Math.max(
+            cropViewport() / crop.image.naturalWidth,
+            cropViewport() / crop.image.naturalHeight,
+        );
+    }
+
+    function cropScale() {
+        return cropBaseScale() * crop.zoom;
+    }
+
+    function clampCropOffset() {
+        const view = cropViewport();
+        const scale = cropScale();
+        // 图片必须始终盖满裁剪框：偏移量被夹在 [view - 显示尺寸, 0]
+        const minX = view - crop.image.naturalWidth * scale;
+        const minY = view - crop.image.naturalHeight * scale;
+        crop.offsetX = Math.min(0, Math.max(minX, crop.offsetX));
+        crop.offsetY = Math.min(0, Math.max(minY, crop.offsetY));
+    }
+
+    function renderCrop() {
+        clampCropOffset();
+        cropImageElement.style.width = `${crop.image.naturalWidth}px`;
+        cropImageElement.style.height = `${crop.image.naturalHeight}px`;
+        cropImageElement.style.transform =
+            `translate(${crop.offsetX}px, ${crop.offsetY}px) scale(${cropScale()})`;
+    }
+
+    function centerCrop() {
+        const view = cropViewport();
+        const scale = cropScale();
+        crop.offsetX = (view - crop.image.naturalWidth * scale) / 2;
+        crop.offsetY = (view - crop.image.naturalHeight * scale) / 2;
+    }
+
+    /* 缩放。anchor 是屏幕坐标，缩放时那一点下面的内容不会跑掉；
+     * 不传就以裁剪框中心为锚点。 */
+    function setCropZoom(nextZoom, anchor) {
+        const rect = cropStageElement.getBoundingClientRect();
+        const view = cropViewport();
+        const point = anchor || { x: rect.left + view / 2, y: rect.top + view / 2 };
+
+        // 锚点在裁剪框内的位置
+        const px = point.x - rect.left;
+        const py = point.y - rect.top;
+        // 它当前对应图片上的哪个点
+        const oldScale = cropScale();
+        const imageX = (px - crop.offsetX) / oldScale;
+        const imageY = (py - crop.offsetY) / oldScale;
+
+        crop.zoom = Math.min(CROP_MAX_ZOOM, Math.max(1, nextZoom));
+
+        // 反推新的偏移量，让同一个图片坐标仍然落在锚点处
+        const newScale = cropScale();
+        crop.offsetX = px - imageX * newScale;
+        crop.offsetY = py - imageY * newScale;
+
+        cropZoomElement.value = String(crop.zoom);
+        renderCrop();
+    }
+
+    function loadImageElement(objectUrl) {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error("这张图片读不出来，换一张试试。"));
+            image.src = objectUrl;
+        });
+    }
+
+    async function openCropper(file) {
+        try {
+            validateAvatarFile(file);
+        } catch (error) {
+            setStatus(avatarStatusElement, error.message, "error");
+            return;
         }
+
+        const objectUrl = URL.createObjectURL(file);
+
+        try {
+            const image = await loadImageElement(objectUrl);
+            crop = {
+                image,
+                objectUrl,
+                zoom: 1,
+                offsetX: 0,
+                offsetY: 0,
+                dragging: false,
+                pointerId: null,
+                originX: 0,
+                originY: 0,
+            };
+            cropImageElement.src = objectUrl;
+            cropZoomElement.value = "1";
+            cropStatusElement.textContent = "";
+            cropDialog.showModal();
+            // 弹窗显示出来才有宽度，这时才算得出初始缩放
+            centerCrop();
+            renderCrop();
+        } catch (error) {
+            URL.revokeObjectURL(objectUrl);
+            setStatus(avatarStatusElement, error.message, "error");
+        }
+    }
+
+    function releaseCropper() {
+        if (crop && crop.objectUrl) URL.revokeObjectURL(crop.objectUrl);
+        crop = null;
+        cropImageElement.removeAttribute("src");
+    }
+
+    cropDialog.addEventListener("close", releaseCropper);
+    cropCancelButton.addEventListener("click", () => cropDialog.close());
+
+    cropResetButton.addEventListener("click", () => {
+        if (!crop) return;
+        crop.zoom = 1;
+        cropZoomElement.value = "1";
+        centerCrop();
+        renderCrop();
+    });
+
+    cropStageElement.addEventListener("pointerdown", event => {
+        if (!crop) return;
+        event.preventDefault();
+        crop.dragging = true;
+        crop.pointerId = event.pointerId;
+        crop.originX = event.clientX;
+        crop.originY = event.clientY;
+        cropStageElement.setPointerCapture(event.pointerId);
+        cropStageElement.classList.add("is-dragging");
+    });
+
+    cropStageElement.addEventListener("pointermove", event => {
+        if (!crop || !crop.dragging || event.pointerId !== crop.pointerId) return;
+        // 用增量而不是"起点到当前位置"：越界被夹住之后再往回拖能立刻跟上
+        crop.offsetX += event.clientX - crop.originX;
+        crop.offsetY += event.clientY - crop.originY;
+        crop.originX = event.clientX;
+        crop.originY = event.clientY;
+        renderCrop();
+    });
+
+    function endCropDrag() {
+        if (!crop || !crop.dragging) return;
+        crop.dragging = false;
+        crop.pointerId = null;
+        cropStageElement.classList.remove("is-dragging");
+    }
+
+    cropStageElement.addEventListener("pointerup", endCropDrag);
+    cropStageElement.addEventListener("pointercancel", endCropDrag);
+
+    cropStageElement.addEventListener("wheel", event => {
+        if (!crop) return;
+        event.preventDefault();
+        setCropZoom(crop.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12), {
+            x: event.clientX,
+            y: event.clientY,
+        });
+    }, { passive: false });
+
+    cropZoomElement.addEventListener("input", () => {
+        if (!crop) return;
+        setCropZoom(Number(cropZoomElement.value), null);
+    });
+
+    // 窗口尺寸变了 baseScale 也会变。重新居中，总比留着半张空白好。
+    window.addEventListener("resize", () => {
+        if (!crop || !cropDialog.open) return;
+        centerCrop();
+        renderCrop();
+    });
+
+    function renderCropBlob() {
+        const view = cropViewport();
+        const scale = cropScale();
 
         const canvas = document.createElement("canvas");
         canvas.width = AVATAR_SIZE;
         canvas.height = AVATAR_SIZE;
         const context = canvas.getContext("2d");
         context.imageSmoothingQuality = "high";
-        // 居中裁成正方形再缩放。直接拉成正方形会把头像压变形。
         context.drawImage(
-            source,
-            (source.width - side) / 2,
-            (source.height - side) / 2,
-            side,
-            side,
+            crop.image,
+            -crop.offsetX / scale,
+            -crop.offsetY / scale,
+            view / scale,
+            view / scale,
             0,
             0,
             AVATAR_SIZE,
             AVATAR_SIZE,
         );
-        // ImageBitmap 占的是显存，用完要显式释放
-        if (typeof source.close === "function") source.close();
-
         return canvasToBlob(canvas);
     }
+
+    /* ── 上传 ─────────────────────────────────────────────── */
 
     function setUpAvatarBusy(busy) {
         avatarButton.disabled = busy;
         avatarRemoveButton.disabled = busy;
     }
 
-    async function uploadAvatar(file) {
+    async function uploadAvatarBlob(blob) {
         setUpAvatarBusy(true);
-        setStatus(avatarStatusElement, "正在处理图片…");
+        setStatus(avatarStatusElement, "正在上传…");
 
         try {
-            const blob = await buildAvatarBlob(file);
             const user = await api("/api/auth/avatar", {
                 method: "PUT",
                 headers: { "Content-Type": blob.type },
@@ -344,13 +522,33 @@
         }
     }
 
+    cropConfirmButton.addEventListener("click", async () => {
+        if (!crop) return;
+
+        cropConfirmButton.disabled = true;
+        cropResetButton.disabled = true;
+        cropCancelButton.disabled = true;
+        cropStatusElement.textContent = "正在处理…";
+
+        try {
+            await uploadAvatarBlob(await renderCropBlob());
+            cropDialog.close();
+        } catch (error) {
+            cropStatusElement.textContent = error.message;
+        } finally {
+            cropConfirmButton.disabled = false;
+            cropResetButton.disabled = false;
+            cropCancelButton.disabled = false;
+        }
+    });
+
     avatarButton.addEventListener("click", () => avatarInput.click());
 
     avatarInput.addEventListener("change", async () => {
         const file = avatarInput.files && avatarInput.files[0];
         // 先把 input 清空：否则连着选同一个文件不会再触发 change
         avatarInput.value = "";
-        if (file) await uploadAvatar(file);
+        if (file) await openCropper(file);
     });
 
     // 图片取不到就退回首字，别在页面上留一个破图图标

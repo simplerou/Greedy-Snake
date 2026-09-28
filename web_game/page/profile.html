@@ -152,6 +152,27 @@
     </section>
 </main>
 
+<dialog id="cropDialog" class="modalDialog cropDialog" aria-labelledby="cropTitle">
+    <h2 id="cropTitle">调整头像</h2>
+    <p class="cropHint">拖动图片调整位置，滚轮或下面的滑块缩放。方框里看到的就是最终效果。</p>
+
+    <div class="cropStage" id="cropStage">
+        <img id="cropImage" alt="待裁剪的头像" draggable="false">
+    </div>
+
+    <label class="cropZoom">
+        <span>缩放</span>
+        <input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="头像缩放比例">
+    </label>
+
+    <p id="cropStatus" class="modalStatus" role="status" aria-live="polite"></p>
+    <div class="modalActions">
+        <button id="cropCancel" type="button">取消</button>
+        <button id="cropReset" type="button">重置</button>
+        <button id="cropConfirm" type="button">保存头像</button>
+    </div>
+</dialog>
+
 <dialog id="deleteDialog" class="modalDialog" aria-labelledby="deleteDialogTitle">
     <div id="deleteConfirmPanel">
         <h2 id="deleteDialogTitle">确认注销账号？</h2>
