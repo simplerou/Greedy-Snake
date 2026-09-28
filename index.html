@@ -1073,19 +1073,23 @@
             <button class="authTab" type="button" role="tab" aria-selected="false" data-auth-tab="register">注册</button>
         </div>
 
-        <!-- novalidate：关掉浏览器的原生校验气泡。
-             那些提示的文案和语言都由浏览器决定（中文系统上也可能出英文），
-             项目控制不了；而这里想要的是统一的中文提示，所以校验全部交给
-             自己的逻辑和后端接口，界面上只出现我们写得出来的那句话。
-             type="email" 保留，为的是让手机弹对键盘。 -->
+        <!-- 三个表单都不用浏览器的原生校验：
+             form 上的 novalidate 关掉提交前的自动校验，输入框上的
+             type="email" / required / pattern / minlength / title 也一并撤掉。
+             留着它们等于把提示语交给浏览器——文案和语言都由浏览器决定
+             （中文系统上照样弹英文），项目搜不到也改不了。
+             校验全部由下面的 JS 与后端接口负责，界面上只出现我们自己写的中文。
+             仍然保留的：maxlength（输入时就限制，不弹气泡）、inputmode（手机键盘）、
+             aria-required（给读屏软件用的必填语义，不参与浏览器校验）。
+             加 novalidate 和撤属性是双保险：只靠前者的前提是浏览器老实照做。 -->
         <form class="authForm" id="loginForm" data-auth-form="login" novalidate>
             <label class="authField">
                 账号
-                <input name="email" type="email" autocomplete="username" placeholder="注册时填写的邮箱" required>
+                <input name="email" type="text" inputmode="email" autocomplete="username" placeholder="注册时填写的邮箱" aria-required="true">
             </label>
             <label class="authField">
                 密码
-                <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+                <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码" aria-required="true">
             </label>
             <button class="authSubmit" type="submit">进入游戏 →</button>
             <button class="authLink" id="forgotLink" type="button">忘记密码？</button>
@@ -1094,15 +1098,15 @@
         <form class="authForm" id="registerForm" data-auth-form="register" novalidate hidden>
             <label class="authField">
                 玩家昵称
-                <input name="nickname" type="text" autocomplete="nickname" maxlength="12" pattern=".*\S.*" title="昵称不能全是空格" placeholder="最多 12 个字符" required>
+                <input name="nickname" type="text" autocomplete="nickname" maxlength="12" placeholder="最多 12 个字符" aria-required="true">
             </label>
             <label class="authField">
                 邮箱
-                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+                <input name="email" type="text" inputmode="email" autocomplete="email" placeholder="player@example.com" aria-required="true">
             </label>
             <label class="authField">
                 密码
-                <input name="password" type="password" autocomplete="new-password" minlength="8" pattern=".*\S.*" title="密码不能全是空格" placeholder="请输入至少 8 位密码" required>
+                <input name="password" type="password" autocomplete="new-password" placeholder="请输入至少 8 位密码" aria-required="true">
             </label>
             <span class="pwStrength" id="pwStrength" data-level="0" aria-live="polite">
                 <span class="pwStrengthBars" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -1110,10 +1114,10 @@
             </span>
             <label class="authField">
                 确认密码
-                <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="再次输入密码" required>
+                <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" aria-required="true">
             </label>
             <div class="authAgree">
-                <input type="checkbox" id="agreeTerms" name="agreed" required>
+                <input type="checkbox" id="agreeTerms" name="agreed" aria-required="true">
                 <label for="agreeTerms">我已阅读并同意</label>
                 <a href="/terms.html" target="_blank" rel="noopener">《用户协议》</a>
                 <span>与</span>
@@ -1125,7 +1129,7 @@
         <form class="authForm" id="resetForm" data-auth-form="reset" novalidate hidden>
             <label class="authField">
                 注册邮箱
-                <input name="email" type="email" autocomplete="email" placeholder="player@example.com" required>
+                <input name="email" type="text" inputmode="email" autocomplete="email" placeholder="player@example.com" aria-required="true">
             </label>
             <button class="authSubmit" id="resetSendCode" type="button">发送验证码 →</button>
 
@@ -1140,11 +1144,11 @@
                 </div>
                 <label class="authField">
                     验证码
-                    <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" minlength="6" pattern="[0-9]{6}" title="请输入 6 位数字验证码" placeholder="6 位数字" required>
+                    <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" aria-required="true">
                 </label>
                 <label class="authField">
                     新密码
-                    <input name="newPassword" type="password" autocomplete="new-password" minlength="8" pattern=".*\S.*" title="密码不能全是空格" placeholder="请输入至少 8 位密码" required>
+                    <input name="newPassword" type="password" autocomplete="new-password" placeholder="请输入至少 8 位密码" aria-required="true">
                 </label>
                 <button class="authSubmit" type="submit">设置新密码 →</button>
             </div>
@@ -1507,9 +1511,11 @@
 
         const FIELD_LABELS = { nickname: "昵称", email: "邮箱", password: "密码" };
 
-        // 与后端 EMAIL_PATTERN 保持一致。表单都开了 novalidate，格式检查得自己做，
-        // 这样提示语只由这里决定，不会冒出浏览器那套跟着系统语言走的原生文案
+        // 与后端 EMAIL_PATTERN 保持一致。表单既关了原生校验、又撤掉了相关的
+        // 校验属性，格式与长度只能自己查，提示语也由这里决定
         const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        // 与后端 MIN_PASSWORD_LENGTH 保持一致
+        const PASSWORD_MIN_LENGTH = 8;
 
         // 后端校验失败时 detail 是数组，需转成可读文案，否则界面会显示 [object Object]
         function describeAuthError(detail) {
@@ -1759,6 +1765,22 @@
             event.preventDefault();
             const form = event.currentTarget;
             const data = new FormData(form);
+
+            // 原生校验已撤掉，验证码格式与新密码长度都得自己查
+            const code = String(data.get("code") || "").trim();
+            if (!/^\d{6}$/.test(code)) {
+                status.textContent = "请填写 6 位数字验证码。";
+                form.querySelector("input[name='code']").focus();
+                return;
+            }
+
+            const newPassword = String(data.get("newPassword") || "");
+            if (newPassword.trim().length < PASSWORD_MIN_LENGTH) {
+                status.textContent = `新密码至少 ${PASSWORD_MIN_LENGTH} 位，且不能全是空格。`;
+                form.querySelector("input[name='newPassword']").focus();
+                return;
+            }
+
             setSubmitting(form, true);
             status.textContent = "";
 
@@ -1768,8 +1790,8 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         email: String(data.get("email") || "").trim(),
-                        code: String(data.get("code") || "").trim(),
-                        new_password: data.get("newPassword")
+                        code,
+                        new_password: newPassword
                     })
                 });
 
@@ -1803,7 +1825,7 @@
             const SEQUENCES = ["1234", "2345", "3456", "4567", "5678", "6789", "abcd", "bcde", "cdef", "qwer", "wert", "asdf", "qaz", "wsx"];
 
             function passwordLevel(value) {
-                if (value.length < 8) return 0;
+                if (value.length < PASSWORD_MIN_LENGTH) return 0;
 
                 let score = 0;
                 if (value.length >= 10) score += 1;
@@ -1825,7 +1847,7 @@
                 return 3;                    // 强
             }
 
-            const LABELS = { 0: "太短 · 至少 8 位", 1: "弱", 2: "较强", 3: "强" };
+            const LABELS = { 0: `太短 · 至少 ${PASSWORD_MIN_LENGTH} 位`, 1: "弱", 2: "较强", 3: "强" };
 
             input.addEventListener("input", () => {
                 const value = input.value;
@@ -1876,13 +1898,17 @@
                 status.textContent = "密码不能全是空格，请输入有效密码。";
                 return;
             }
+            if (password.trim().length < PASSWORD_MIN_LENGTH) {
+                status.textContent = `密码至少 ${PASSWORD_MIN_LENGTH} 位，请重新设置。`;
+                return;
+            }
 
             if (password !== data.get("confirmPassword")) {
                 status.textContent = "两次输入的密码不一致，请重新确认。";
                 return;
             }
 
-            // 表单开了 novalidate，复选框的 required 不再自动拦截，这里必须自己查
+            // 原生校验已撤掉，复选框的必勾也得自己查
             if (!document.getElementById("agreeTerms").checked) {
                 status.textContent = "请先阅读并同意《用户协议》与《隐私政策》。";
                 return;
