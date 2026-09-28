@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy.dialects.mysql import MEDIUMBLOB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -90,3 +91,29 @@ class PasswordReset(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Avatar(Base):
+    """玩家头像。
+
+    单独一张表，而不是往 users 上加一列：头像是几十 KB 的二进制，混在 users 里会让
+    每次 select(User) 都把它一起捞出来，登录、鉴权这些高频路径都得跟着变慢。
+
+    存的是前端裁剪压缩后的成品（256×256），所以单行体积可控；也正因为是成品，
+    后端不需要图像处理库，只按文件头校验格式。
+    """
+
+    __tablename__ = "avatars"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    data: Mapped[bytes] = mapped_column(MEDIUMBLOB)
+    mime: Mapped[str] = mapped_column(String(32))
+    # 每次上传换一个随机令牌，前端拿它当 URL 上的版本号：换头像后地址立刻变，
+    # 浏览器就不会继续拿缓存里的旧图。
+    #
+    # 不用 updated_at 充当版本号，是因为时间戳的精度取决于系统时钟（Windows 上
+    # 通常只有毫秒级），连着传两张很可能撞出同一个值。
+    version: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(DateTime)

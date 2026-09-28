@@ -26,14 +26,14 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .database import SessionLocal, init_db
-from .models import AuthSession, PasswordReset, Score, User
+from .models import AuthSession, Avatar, PasswordReset, Score, User
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -60,6 +60,21 @@ RESET_MAX_ATTEMPTS = 5                # 同一条验证码最多尝试次数，�
 RESET_REQUEST_RATE_LIMIT = (3, 300)   # 申请验证码：每 IP 5 分钟 3 次
 RESET_CONFIRM_RATE_LIMIT = (10, 300)  # 提交验证码：每 IP 5 分钟 10 次
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+# ── 头像 ────────────────────────────────────────────────
+# 前端会先把图片居中裁剪成正方形并缩到 256×256，正常只有几 KB 到几十 KB；
+# 留出富余，同时防住直接把原图 POST 上来的情况。
+AVATAR_MAX_BYTES = 512 * 1024
+AVATAR_UPLOAD_RATE_LIMIT = (20, 300)  # 上传头像：每 IP 5 分钟 20 次
+
+# 只认位图。**绝对不收 SVG**：SVG 能内嵌脚本，而同源下的图片地址是可以被直接打开的，
+# 那等于给自己开了一个存储型 XSS 的口子。
+AVATAR_MAGIC = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
 SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -206,6 +221,9 @@ class UserOut(BaseModel):
     # 用户中心要显示"加入时间"。注意存的是 UTC 的 naive 时间，序列化出来不带时区
     # 标记，前端按本地时区解析会差几个小时，所以要补上 Z 再 new Date。
     created_at: datetime
+    # 有头像时是带版本号的地址（/api/auth/avatar/{id}?v=…），没有则为 None，
+    # 前端回退到昵称首字
+    avatar_url: str | None = None
 
 
 class AuthOut(BaseModel):
@@ -447,6 +465,20 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def detect_image_mime(data: bytes) -> str | None:
+    """按文件头判断图片类型，认不出来就返回 None。
+
+    刻意不信任请求里的 Content-Type：那是调用方随手写的，不能作为依据。
+    """
+    for signature, mime in AVATAR_MAGIC:
+        if data.startswith(signature):
+            return mime
+    # WebP 的文件头是 RIFF....WEBP（中间 4 字节是文件长度）
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def create_session(session, user: User, request: Request) -> str:
     token = secrets.token_urlsafe(32)
     session.add(
@@ -495,18 +527,27 @@ def deletion_deadline(user: User) -> datetime | None:
     return user.deletion_requested_at + timedelta(days=DELETION_GRACE_DAYS)
 
 
-def to_user_out(user: User) -> UserOut:
+def to_user_out(session, user: User) -> UserOut:
     """账号对外的统一表示形式。
 
     刻意不暴露 deletion_requested_at：提交注销申请时该账号的所有会话都会失效，
     客户端拿不到有效令牌，也就无从查询这个状态。冷静期的信息只通过
     DELETE /api/auth/account 的返回告诉用户一次即可。
+
+    头像存在另一张表里，这里只 Select version 那一列来拼版本号——绝不能把图片
+    本身也捞出来，否则每次登录、每次鉴权都要白读几十 KB。
     """
+    version = session.scalar(
+        select(Avatar.version).where(Avatar.user_id == user.id)
+    )
+    avatar_url = f"/api/auth/avatar/{user.id}?v={version}" if version else None
+
     return UserOut(
         id=user.id,
         nickname=user.nickname,
         email=user.email,
         created_at=user.created_at,
+        avatar_url=avatar_url,
     )
 
 
@@ -593,6 +634,7 @@ login_limiter = SlidingWindowLimiter(*LOGIN_RATE_LIMIT)
 register_limiter = SlidingWindowLimiter(*REGISTER_RATE_LIMIT)
 reset_request_limiter = SlidingWindowLimiter(*RESET_REQUEST_RATE_LIMIT)
 reset_confirm_limiter = SlidingWindowLimiter(*RESET_CONFIRM_RATE_LIMIT)
+avatar_upload_limiter = SlidingWindowLimiter(*AVATAR_UPLOAD_RATE_LIMIT)
 
 
 def enforce_rate_limit(request: Request, limiter: SlidingWindowLimiter, message: str) -> None:
@@ -674,7 +716,7 @@ def register(payload: RegisterIn, request: Request) -> AuthOut:
             session.rollback()
             raise HTTPException(status_code=409, detail="邮箱或昵称已被使用") from error
 
-        return AuthOut(token=token, user=to_user_out(user))
+        return AuthOut(token=token, user=to_user_out(session, user))
 
 
 @app.post("/api/auth/login", response_model=AuthOut)
@@ -713,14 +755,14 @@ def login(payload: LoginIn, request: Request) -> AuthOut:
         session.execute(delete(AuthSession).where(AuthSession.expires_at <= utcnow()))
         token = create_session(session, user, request)
         session.commit()
-        return AuthOut(token=token, user=to_user_out(user))
+        return AuthOut(token=token, user=to_user_out(session, user))
 
 
 @app.get("/api/auth/me", response_model=UserOut)
 def current_user(authorization: str | None = Header(default=None)) -> UserOut:
     with SessionLocal() as session:
         user, _ = get_current_user(session, authorization)
-        return to_user_out(user)
+        return to_user_out(session, user)
 
 
 @app.post("/api/auth/logout", status_code=204)
@@ -812,7 +854,7 @@ def update_profile(
             update(Score).where(Score.user_id == user.id).values(name=nickname)
         )
         session.commit()
-        return to_user_out(user)
+        return to_user_out(session, user)
 
 
 @app.post("/api/auth/password", status_code=204)
@@ -895,6 +937,110 @@ def delete_session(
 
         session.delete(target)
         session.commit()
+
+
+@app.put("/api/auth/avatar", response_model=UserOut)
+async def upload_avatar(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> UserOut:
+    """上传头像。
+
+    图片直接用请求体传，不走 multipart——前端已经在 canvas 里裁好并压成小图了，
+    这里只是把它存下来，没有别的表单字段要传。
+
+    只按文件头认格式，不引入图像处理库：图片是前端加工过的成品，后端没必要再解
+    一遍；真正要防的是绕过前端直接塞东西进来。
+    """
+    enforce_rate_limit(request, avatar_upload_limiter, "上传过于频繁，请稍后再试")
+
+    with SessionLocal() as session:
+        user, _ = get_current_user(session, authorization)
+
+        # 先看声明的长度，超了就直接拒，不必把整个 body 读进内存
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > AVATAR_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"头像文件不能超过 {AVATAR_MAX_BYTES // 1024} KB",
+            )
+
+        data = await request.body()
+        if not data:
+            raise HTTPException(status_code=422, detail="没有收到图片内容")
+        if len(data) > AVATAR_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"头像文件不能超过 {AVATAR_MAX_BYTES // 1024} KB",
+            )
+
+        mime = detect_image_mime(data)
+        if mime is None:
+            raise HTTPException(
+                status_code=422,
+                detail="只支持 JPEG / PNG / WebP / GIF 图片（不支持 SVG）",
+            )
+
+        now = utcnow()
+        version = secrets.token_hex(6)  # 每次上传都换，保证前端 URL 一定变
+        avatar = session.get(Avatar, user.id)
+        if avatar is None:
+            session.add(
+                Avatar(
+                    user_id=user.id,
+                    data=data,
+                    mime=mime,
+                    version=version,
+                    updated_at=now,
+                )
+            )
+        else:
+            # 一个人只有一张头像：重复上传就是覆盖，不留历史版本
+            avatar.data = data
+            avatar.mime = mime
+            avatar.version = version
+            avatar.updated_at = now
+        session.commit()
+
+        return to_user_out(session, user)
+
+
+@app.delete("/api/auth/avatar", response_model=UserOut)
+def delete_avatar(authorization: str | None = Header(default=None)) -> UserOut:
+    """移除头像，回到昵称首字的默认样式。"""
+    with SessionLocal() as session:
+        user, _ = get_current_user(session, authorization)
+        session.execute(delete(Avatar).where(Avatar.user_id == user.id))
+        session.commit()
+        return to_user_out(session, user)
+
+
+@app.get("/api/auth/avatar/{user_id}", include_in_schema=False)
+def get_avatar(user_id: int) -> Response:
+    """返回头像图片。
+
+    刻意不要求登录：<img src> 带不了 Authorization 头，要求鉴权的话页面上就显示不
+    出来。头像本身也不是敏感信息。
+
+    URL 里带着版本号（见 to_user_out），内容一变地址就变，所以这里可以放心让浏览器
+    长期缓存。
+    """
+    with SessionLocal() as session:
+        avatar = session.get(Avatar, user_id)
+        if avatar is None:
+            raise HTTPException(status_code=404, detail="该用户没有设置头像")
+        # 先把二进制取出来再离开 session，免得 Response 构造时对象已经失效
+        data, mime = avatar.data, avatar.mime
+
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            # 明确声明类型并禁止嗅探：万一有格式判错的漏网之鱼，也不会被当成 HTML 渲染
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def reset_request_response(code: str | None = None) -> dict:

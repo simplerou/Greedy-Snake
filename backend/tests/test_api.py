@@ -7,6 +7,7 @@
     pytest -v                       # 看每个用例的名字
     pytest -k TestScoreAntiCheat    # 只跑防作弊相关
 """
+import base64
 import math
 from datetime import datetime, timedelta
 
@@ -14,6 +15,7 @@ import pytest
 from sqlalchemy import func, select
 
 from backend.main import (
+    AVATAR_MAX_BYTES,
     DELETION_GRACE_DAYS,
     LOGIN_RATE_LIMIT,
     MIN_TICK_MS,
@@ -26,7 +28,7 @@ from backend.main import (
     generate_reset_code,
     utcnow,
 )
-from backend.models import AuthSession, PasswordReset, Score, User
+from backend.models import AuthSession, Avatar, PasswordReset, Score, User
 
 VALID_REGISTER = {
     "nickname": "测试玩家",
@@ -729,6 +731,119 @@ class TestSessions:
         assert response.status_code == 404
         # 对方的会话仍在
         assert len(self._sessions(client, victim_headers)) == 1
+
+
+class TestAvatar:
+    """头像：上传、读取、移除。"""
+
+    # 一张真正的 1×1 透明 PNG。用它而不是伪造的文件头，是为了让这些用例在后端
+    # 真的开始解析图片的那天依然成立。
+    PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+        "YAAAAAQAAQABh6FO1AAAAABJRU5ErkJggg=="
+    )
+    SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+    def _upload(self, client, headers, data=None, content_type="image/png"):
+        return client.put(
+            "/api/auth/avatar",
+            content=self.PNG if data is None else data,
+            headers=dict(headers, **{"Content-Type": content_type}),
+        )
+
+    def test_upload_then_read_back(self, client, auth_headers):
+        assert client.get("/api/auth/me", headers=auth_headers).json()["avatar_url"] is None
+
+        response = self._upload(client, auth_headers)
+        assert response.status_code == 200
+        avatar_url = response.json()["avatar_url"]
+        assert avatar_url and "/api/auth/avatar/" in avatar_url
+
+        # 公开可读：<img src> 带不了 Authorization 头，要求登录的话页面上就显示不出来
+        image = client.get(avatar_url)
+        assert image.status_code == 200
+        assert image.content == self.PNG
+        assert image.headers["content-type"] == "image/png"
+        assert image.headers["x-content-type-options"] == "nosniff"
+
+        assert (
+            client.get("/api/auth/me", headers=auth_headers).json()["avatar_url"] == avatar_url
+        )
+
+    def test_requires_login(self, client):
+        assert self._upload(client, {}).status_code == 401
+        assert client.delete("/api/auth/avatar").status_code == 401
+
+    def test_rejects_non_image(self, client, auth_headers):
+        assert self._upload(client, auth_headers, data=b"not an image at all").status_code == 422
+
+    def test_rejects_svg(self, client, auth_headers):
+        """SVG 必须被拒。
+
+        它能内嵌脚本，而同源下的图片地址是可以被直接打开的——收下它就等于开了
+        一个存储型 XSS 的口子。
+        """
+        response = self._upload(
+            client, auth_headers, data=self.SVG, content_type="image/svg+xml"
+        )
+        assert response.status_code == 422
+
+    def test_rejects_oversized_body(self, client, auth_headers):
+        oversized = self.PNG + b"\x00" * AVATAR_MAX_BYTES
+        assert self._upload(client, auth_headers, data=oversized).status_code == 413
+
+    def test_content_type_header_is_ignored(self, client, auth_headers):
+        """格式只认文件头，请求里写的 Content-Type 不作数。"""
+        # 谎称是 PNG，其实是一段文本
+        assert (
+            self._upload(
+                client, auth_headers, data=b"plain text", content_type="image/png"
+            ).status_code
+            == 422
+        )
+
+        # 反过来，谎称是文本但内容确实是 PNG：应当收下，并按 PNG 存
+        response = self._upload(client, auth_headers, content_type="text/plain")
+        assert response.status_code == 200
+        assert client.get(response.json()["avatar_url"]).headers["content-type"] == "image/png"
+
+    def test_repeated_upload_overwrites(self, client, auth_headers, db_session):
+        self._upload(client, auth_headers)
+        self._upload(client, auth_headers, data=self.PNG + b"\x00" * 8)
+
+        db_session.rollback()
+        assert db_session.scalar(select(func.count()).select_from(Avatar)) == 1
+
+    def test_each_upload_gets_a_new_version(self, client, auth_headers):
+        """版本号必须每次都变，否则浏览器会一直用缓存里的旧图。"""
+        first = self._upload(client, auth_headers).json()["avatar_url"]
+        second = self._upload(client, auth_headers).json()["avatar_url"]
+        assert first != second
+
+    def test_delete_restores_the_default(self, client, auth_headers):
+        avatar_url = self._upload(client, auth_headers).json()["avatar_url"]
+        assert client.get(avatar_url).status_code == 200
+
+        response = client.delete("/api/auth/avatar", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["avatar_url"] is None
+        assert client.get(avatar_url).status_code == 404
+
+    def test_unknown_user_has_no_avatar(self, client):
+        assert client.get("/api/auth/avatar/999999").status_code == 404
+
+    def test_avatars_do_not_leak_between_users(self, client, register, auth_headers):
+        mine = self._upload(client, auth_headers).json()["avatar_url"]
+
+        other = register(nickname="另一个人", email="other@example.com")
+        other_headers = {"Authorization": f"Bearer {other.json()['token']}"}
+        assert client.get("/api/auth/me", headers=other_headers).json()["avatar_url"] is None
+
+        # 对方看不到我的头像地址，我的也不受影响
+        assert client.get(mine).status_code == 200
+        assert (
+            client.get("/api/auth/me", headers=auth_headers).json()["avatar_url"] == mine
+        )
 
 
 class TestResetCodeGeneration:
