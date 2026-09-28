@@ -1173,12 +1173,13 @@ canvas{
 }
 
 /* ── 顶栏 ── */
+/* 用三栏 grid 而不是 flex + space-between：两侧按钮带上边框之后宽度不再相等，
+ * 标题会被推得偏离正中。1fr auto 1fr 让标题始终居中。 */
 .profileHeader{
-    display:flex;
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
     align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
+    gap:12px;
     padding-bottom:16px;
     border-bottom:1px solid var(--line);
 }
@@ -1194,25 +1195,67 @@ canvas{
     color:var(--green);
 }
 
+/* 头部的两个操作按钮。原先只是两行灰字（12px / padding:6px 0 / 无边框），
+ * 在深色页面上几乎看不出是可点的，所以给它们描边、加底色、撑到能点中的高度。 */
 .profileBack,
 .profileLogout{
     font:inherit;
-    font-size:12px;
+    font-size:12.5px;
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    min-height:36px;
+    padding:0 15px;
+    border:1px solid var(--line-bright);
+    background:var(--panel-raised);
     color:var(--muted);
-    padding:6px 0;
-    border:0;
-    background:none;
+    white-space:nowrap;
     cursor:pointer;
     text-decoration:none;
-    transition:color .16s ease;
+    transition:border-color .16s ease, color .16s ease, background-color .16s ease;
 }
 
+.profileBack{
+    justify-self:start;
+}
+
+.profileLogout{
+    justify-self:end;
+}
+
+/* 返回是导航，用全站统一的绿色；退出会终结当前会话，按危险操作处理成红色。 */
 .profileBack:hover,
-.profileBack:focus-visible,
-.profileLogout:hover,
-.profileLogout:focus-visible{
+.profileBack:focus-visible{
+    border-color:var(--green);
+    background:rgba(105,244,154,.1);
     color:var(--green);
     outline:none;
+}
+
+.profileLogout:hover,
+.profileLogout:focus-visible{
+    border-color:var(--red);
+    background:rgba(255,105,105,.1);
+    color:var(--red);
+    outline:none;
+}
+
+.profileLogout:disabled{
+    opacity:.55;
+    cursor:default;
+}
+
+/* 箭头单独拎出来是为了让它能单独位移，hover 时向左滑一点，
+ * 比整块变绿更能传达"这是往回走"。 */
+.profileBackArrow{
+    display:inline-block;
+    transition:transform .16s ease;
+}
+
+.profileBack:hover .profileBackArrow,
+.profileBack:focus-visible .profileBackArrow{
+    transform:translateX(-3px);
 }
 
 /* ── 账号概览 ── */
@@ -1739,6 +1782,18 @@ canvas{
     .profileShell{
         width:calc(100% - 24px);
         padding:18px 0 48px;
+    }
+
+    /* 三栏不换行，窄屏靠收紧间距与内边距来放下一行 */
+    .profileHeader{
+        gap:8px;
+    }
+
+    .profileBack,
+    .profileLogout{
+        font-size:11.5px;
+        min-height:34px;
+        padding:0 11px;
     }
 
     .profileIdentity{
