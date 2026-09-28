@@ -11,7 +11,7 @@ import math
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend.main import (
     DELETION_GRACE_DAYS,
@@ -415,6 +415,320 @@ class TestAccountDeletion:
             client.post("/api/scores", json=score_payload(), headers=auth_headers).status_code
             == 401
         )
+
+
+class TestUpdateProfile:
+    """改昵称。昵称同时是榜单上的显示名，所以改名必须连带成绩一起改。"""
+
+    def test_rename_succeeds(self, client, auth_headers):
+        response = client.patch(
+            "/api/auth/me", json={"nickname": "改名成功"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["nickname"] == "改名成功"
+        assert (
+            client.get("/api/auth/me", headers=auth_headers).json()["nickname"] == "改名成功"
+        )
+
+    def test_requires_login(self, client):
+        assert client.patch("/api/auth/me", json={"nickname": "谁"}).status_code == 401
+
+    @pytest.mark.parametrize("nickname", ["", "   "])
+    def test_blank_nickname_is_rejected(self, client, auth_headers, nickname):
+        response = client.patch(
+            "/api/auth/me", json={"nickname": nickname}, headers=auth_headers
+        )
+        assert response.status_code == 422
+
+    def test_too_long_nickname_is_rejected(self, client, auth_headers):
+        response = client.patch(
+            "/api/auth/me", json={"nickname": "名" * 13}, headers=auth_headers
+        )
+        assert response.status_code == 422
+
+    def test_duplicate_nickname_is_rejected(self, client, register, auth_headers):
+        register(nickname="已被占用", email="taken@example.com")
+        response = client.patch(
+            "/api/auth/me", json={"nickname": "已被占用"}, headers=auth_headers
+        )
+        assert response.status_code == 409
+
+    def test_keeping_the_same_nickname_is_allowed(self, client, auth_headers):
+        """改成自己现在的昵称不该被当成"重名"拒掉。"""
+        response = client.patch(
+            "/api/auth/me", json={"nickname": "测试玩家"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+
+    def test_history_follows_the_new_nickname(self, client, auth_headers, db_session):
+        client.post("/api/scores", json=score_payload(), headers=auth_headers)
+
+        client.patch("/api/auth/me", json={"nickname": "改名之后"}, headers=auth_headers)
+
+        db_session.rollback()
+        assert [record.name for record in db_session.scalars(select(Score)).all()] == [
+            "改名之后"
+        ]
+        # 榜单按 name 查询，改完之后仍然找得到，不会凭空消失
+        assert client.get("/api/leaderboard/easy").json()[0]["name"] == "改名之后"
+
+
+class TestChangePassword:
+    """改密码。旧密码是二次确认，改完只保留发起改动的那条会话。"""
+
+    OLD = "abc12345"
+    NEW = "newpass123"
+
+    def _change(self, client, headers, current=OLD, new=NEW):
+        return client.post(
+            "/api/auth/password",
+            json={"current_password": current, "new_password": new},
+            headers=headers,
+        )
+
+    def _login(self, client, password):
+        return client.post(
+            "/api/auth/login", json={"email": "player@example.com", "password": password}
+        )
+
+    def test_requires_login(self, client):
+        assert (
+            client.post(
+                "/api/auth/password",
+                json={"current_password": self.OLD, "new_password": self.NEW},
+            ).status_code
+            == 401
+        )
+
+    def test_changes_password(self, client, auth_headers):
+        assert self._change(client, auth_headers).status_code == 204
+        assert self._login(client, self.NEW).status_code == 200
+        assert self._login(client, self.OLD).status_code == 401
+
+    def test_wrong_current_password_is_rejected(self, client, auth_headers):
+        response = self._change(client, auth_headers, current="not-my-password")
+        assert response.status_code == 401
+        # 密码不该被改动
+        assert self._login(client, self.OLD).status_code == 200
+
+    @pytest.mark.parametrize("new_password", ["short", " " * 10])
+    def test_weak_new_password_is_rejected(self, client, auth_headers, new_password):
+        assert self._change(client, auth_headers, new=new_password).status_code == 422
+
+    def test_other_sessions_are_dropped_but_current_survives(
+        self, client, auth_headers, db_session
+    ):
+        # 再登两次，凑出三条会话
+        for _ in range(2):
+            assert self._login(client, self.OLD).status_code == 200
+
+        db_session.rollback()
+        assert db_session.scalar(select(func.count()).select_from(AuthSession)) == 3
+
+        assert self._change(client, auth_headers).status_code == 204
+
+        db_session.rollback()
+        assert db_session.scalar(select(func.count()).select_from(AuthSession)) == 1
+        # 留下的是发起改动的那条：原来的令牌仍然可用
+        assert client.get("/api/auth/me", headers=auth_headers).status_code == 200
+
+
+class TestMyScores:
+    """我的战绩。只认自己账号的成绩，不含别人的。"""
+
+    def test_requires_login(self, client):
+        assert client.get("/api/scores/mine").status_code == 401
+
+    def test_empty_account(self, client, auth_headers):
+        body = client.get("/api/scores/mine", headers=auth_headers).json()
+        assert body["total_games"] == 0
+        assert body["recent"] == []
+        assert set(body["best"]) == {"easy", "medium", "hard"}
+        assert all(value is None for value in body["best"].values())
+
+    def test_best_is_taken_per_difficulty(self, client, auth_headers):
+        for score in (40, 120, 80):
+            client.post(
+                "/api/scores",
+                json=score_payload(
+                    score=score, food_eaten=score // SCORE_PER_FOOD, moves=400
+                ),
+                headers=auth_headers,
+            )
+        client.post(
+            "/api/scores",
+            json=score_payload(
+                difficulty="hard", score=350, food_eaten=35, moves=400
+            ),
+            headers=auth_headers,
+        )
+
+        body = client.get("/api/scores/mine", headers=auth_headers).json()
+        assert body["best"]["easy"] == 120
+        assert body["best"]["hard"] == 350
+        assert body["best"]["medium"] is None
+        assert body["total_games"] == 4
+
+    def test_recent_is_newest_first(self, client, auth_headers):
+        for score in (40, 80, 120):
+            client.post(
+                "/api/scores",
+                json=score_payload(
+                    score=score, food_eaten=score // SCORE_PER_FOOD, moves=400
+                ),
+                headers=auth_headers,
+            )
+
+        recent = client.get("/api/scores/mine", headers=auth_headers).json()["recent"]
+        # created_at 只精确到秒，靠 id 兜底保证顺序稳定
+        assert [item["score"] for item in recent] == [120, 80, 40]
+
+    def test_only_own_scores_are_counted(self, client, register, auth_headers):
+        client.post("/api/scores", json=score_payload(), headers=auth_headers)
+
+        other = register(nickname="另一个人", email="other@example.com")
+        other_headers = {"Authorization": f"Bearer {other.json()['token']}"}
+        client.post(
+            "/api/scores",
+            json=score_payload(score=990, food_eaten=99, moves=400),
+            headers=other_headers,
+        )
+
+        assert (
+            client.get("/api/scores/mine", headers=auth_headers).json()["total_games"] == 1
+        )
+        assert (
+            client.get("/api/scores/mine", headers=other_headers).json()["total_games"] == 1
+        )
+
+    def test_legacy_scores_are_claimed(self, client, auth_headers, db_session):
+        """user_id 这一列是后加的，加列之前提交的成绩应当在读取时被认领。"""
+        user = db_session.scalar(select(User))
+        db_session.add(
+            Score(
+                user_id=None,
+                name=user.nickname,
+                difficulty="medium",
+                score=200,
+                duration_seconds=300,
+                food_eaten=20,
+                moves=150,
+            )
+        )
+        db_session.commit()
+
+        body = client.get("/api/scores/mine", headers=auth_headers).json()
+        assert body["total_games"] == 1
+        assert body["best"]["medium"] == 200
+
+        db_session.rollback()
+        assert db_session.scalar(select(Score)).user_id == user.id
+
+    def test_foreign_legacy_scores_are_not_claimed(self, client, auth_headers, db_session):
+        """同名但早于本账号注册时间的成绩是别人留下的，不能认领。
+
+        昵称允许被回收重用：前一个账号改名后，这个昵称可能落到新账号头上。
+        如果只看昵称，新账号会平白继承一堆历史成绩。
+        """
+        user = db_session.scalar(select(User))
+        db_session.add(
+            Score(
+                user_id=None,
+                name=user.nickname,
+                difficulty="hard",
+                score=500,
+                duration_seconds=300,
+                food_eaten=50,
+                moves=200,
+                created_at=user.created_at - timedelta(days=1),
+            )
+        )
+        db_session.commit()
+
+        body = client.get("/api/scores/mine", headers=auth_headers).json()
+        assert body["total_games"] == 0
+        assert body["best"]["hard"] is None
+
+
+class TestSessions:
+    """登录设备：列出会话、退出其他设备。"""
+
+    EMAIL = "player@example.com"
+    PASSWORD = "abc12345"
+
+    def _login(self, client):
+        return client.post(
+            "/api/auth/login", json={"email": self.EMAIL, "password": self.PASSWORD}
+        )
+
+    def _sessions(self, client, headers):
+        response = client.get("/api/auth/sessions", headers=headers)
+        assert response.status_code == 200
+        return response.json()
+
+    def test_requires_login(self, client):
+        assert client.get("/api/auth/sessions").status_code == 401
+
+    def test_lists_the_current_session(self, client, auth_headers):
+        rows = self._sessions(client, auth_headers)
+        assert len(rows) == 1
+        assert rows[0]["current"] is True
+
+    def test_marks_current_among_several(self, client, auth_headers):
+        self._login(client)
+        self._login(client)
+
+        rows = self._sessions(client, auth_headers)
+        assert len(rows) == 3
+        assert sum(1 for row in rows if row["current"]) == 1
+
+    def test_never_exposes_the_token_hash(self, client, auth_headers):
+        row = self._sessions(client, auth_headers)[0]
+        assert set(row) == {
+            "id",
+            "created_at",
+            "expires_at",
+            "current",
+            "user_agent",
+            "ip_address",
+        }
+
+    def test_records_device_info(self, client, auth_headers):
+        # 登录时应当把 User-Agent 记下来，页面上才能显示"这是什么设备"
+        assert self._sessions(client, auth_headers)[0]["user_agent"]
+
+    def test_can_revoke_another_session(self, client, auth_headers):
+        self._login(client)
+        other = next(row for row in self._sessions(client, auth_headers) if not row["current"])
+
+        response = client.delete(f"/api/auth/sessions/{other['id']}", headers=auth_headers)
+        assert response.status_code == 204
+        assert len(self._sessions(client, auth_headers)) == 1
+
+    def test_cannot_revoke_the_current_session(self, client, auth_headers):
+        current = self._sessions(client, auth_headers)[0]
+        response = client.delete(
+            f"/api/auth/sessions/{current['id']}", headers=auth_headers
+        )
+        assert response.status_code == 422
+
+    def test_unknown_session_is_not_found(self, client, auth_headers):
+        assert (
+            client.delete("/api/auth/sessions/999999", headers=auth_headers).status_code == 404
+        )
+
+    def test_cannot_revoke_someone_elses_session(self, client, register, auth_headers):
+        victim = register(nickname="受害者", email="victim@example.com")
+        victim_headers = {"Authorization": f"Bearer {victim.json()['token']}"}
+        victim_session = self._sessions(client, victim_headers)[0]
+
+        # 拿自己的身份去删别人的会话，应当一律当作"不存在"，不泄露 id 是否有效
+        response = client.delete(
+            f"/api/auth/sessions/{victim_session['id']}", headers=auth_headers
+        )
+        assert response.status_code == 404
+        # 对方的会话仍在
+        assert len(self._sessions(client, victim_headers)) == 1
 
 
 class TestResetCodeGeneration:

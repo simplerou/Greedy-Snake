@@ -203,12 +203,67 @@ class UserOut(BaseModel):
     id: int
     nickname: str
     email: str
+    # 用户中心要显示"加入时间"。注意存的是 UTC 的 naive 时间，序列化出来不带时区
+    # 标记，前端按本地时区解析会差几个小时，所以要补上 Z 再 new Date。
+    created_at: datetime
 
 
 class AuthOut(BaseModel):
     token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class UpdateProfileIn(BaseModel):
+    """用户中心里改昵称。长度上限与注册保持一致。"""
+
+    nickname: str = Field(max_length=MAX_NAME_LEN)
+
+    # 与 RegisterIn 一样先去首尾空格：既让"  合法昵称  "不被误判超长，
+    # 也让整串空格变成空串、被接口当作非法昵称拒掉
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def strip_nickname(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ChangePasswordIn(BaseModel):
+    # 旧密码不设长度下限：填错了同样是"密码不对"，由接口统一提示
+    current_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=128)
+
+
+class SessionOut(BaseModel):
+    """一条登录会话。
+
+    令牌摘要绝不外传，只给出辨认设备所需的信息：什么时候登的、从哪台设备、
+    以及是不是当前这条（当前这条不允许被"退出"，要退就直接登出）。
+    """
+
+    id: int
+    created_at: datetime
+    expires_at: datetime
+    current: bool
+    user_agent: str | None = None
+    ip_address: str | None = None
+
+
+class MyScoreOut(BaseModel):
+    """「我的战绩」里的一条成绩。"""
+
+    difficulty: str
+    score: int
+    food_eaten: int
+    moves: int
+    duration_seconds: int
+    created_at: datetime
+
+
+class MyStatsOut(BaseModel):
+    # 各难度的最佳分；没有成绩的难度为 None
+    best: dict[str, int | None]
+    total_games: int
+    recent: list[MyScoreOut]
 
 
 def normalize_email(value: str) -> str:
@@ -378,13 +433,30 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def create_session(session, user: User) -> str:
+def client_ip(request: Request) -> str | None:
+    """取请求来源 IP，供「登录设备」展示。
+
+    部署在反向代理后面时 request.client.host 拿到的是代理地址，所以优先读
+    X-Forwarded-For 的第一段（最靠近客户端的那一跳）。
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first[:45]  # 列宽兼容 IPv6
+    return request.client.host if request.client else None
+
+
+def create_session(session, user: User, request: Request) -> str:
     token = secrets.token_urlsafe(32)
     session.add(
         AuthSession(
             user_id=user.id,
             token_hash=token_digest(token),
             expires_at=utcnow() + timedelta(days=SESSION_DAYS),
+            # 只用于「登录设备」页面辨认，截断到列宽以内，避免超长 UA 直接把插入打挂
+            user_agent=(request.headers.get("user-agent") or "")[:255] or None,
+            ip_address=client_ip(request),
         )
     )
     return token
@@ -430,7 +502,12 @@ def to_user_out(user: User) -> UserOut:
     客户端拿不到有效令牌，也就无从查询这个状态。冷静期的信息只通过
     DELETE /api/auth/account 的返回告诉用户一次即可。
     """
-    return UserOut(id=user.id, nickname=user.nickname, email=user.email)
+    return UserOut(
+        id=user.id,
+        nickname=user.nickname,
+        email=user.email,
+        created_at=user.created_at,
+    )
 
 
 def purge_expired_deletions(session) -> int:
@@ -591,7 +668,7 @@ def register(payload: RegisterIn, request: Request) -> AuthOut:
         session.add(user)
         try:
             session.flush()
-            token = create_session(session, user)
+            token = create_session(session, user, request)
             session.commit()
         except IntegrityError as error:
             session.rollback()
@@ -634,7 +711,7 @@ def login(payload: LoginIn, request: Request) -> AuthOut:
             user.deletion_requested_at = None
 
         session.execute(delete(AuthSession).where(AuthSession.expires_at <= utcnow()))
-        token = create_session(session, user)
+        token = create_session(session, user, request)
         session.commit()
         return AuthOut(token=token, user=to_user_out(user))
 
@@ -680,6 +757,144 @@ def request_account_deletion(authorization: str | None = Header(default=None)) -
         "grace_days": DELETION_GRACE_DAYS,
         "delete_after": deadline,
     }
+
+
+def claim_legacy_scores(session, user: User) -> int:
+    """把还没有归属的成绩认领给 user，返回认领条数。
+
+    scores.user_id 是后加的列，之前提交的成绩它是空的，不认领的话「我的战绩」
+    里看不到自己的历史记录。昵称在 users 表里唯一，所以按昵称匹配不会串号。
+
+    额外的 created_at >= user.created_at 是关键：如果某个昵称以前被别人用过
+    （对方改了名），那人留下的成绩时间会早于本账号的注册时间，不该算在自己头上。
+    """
+    result = session.execute(
+        update(Score)
+        .where(
+            Score.user_id.is_(None),
+            Score.name == user.nickname,
+            Score.created_at >= user.created_at,
+        )
+        .values(user_id=user.id)
+    )
+    return result.rowcount or 0
+
+
+@app.patch("/api/auth/me", response_model=UserOut)
+def update_profile(
+    payload: UpdateProfileIn,
+    authorization: str | None = Header(default=None),
+) -> UserOut:
+    """修改昵称。
+
+    昵称同时也是成绩在榜单上的显示名，所以改名时必须把该账号的历史成绩一起改过来，
+    否则那些成绩会突然"不属于"任何人——榜单上还挂着旧名字，用户中心里却查不到。
+    """
+    nickname = payload.nickname
+    if not nickname:
+        raise HTTPException(status_code=422, detail="昵称不能为空或全是空格")
+
+    with SessionLocal() as session:
+        user, _ = get_current_user(session, authorization)
+
+        if nickname != user.nickname and session.scalar(
+            select(User.id).where(User.nickname == nickname)
+        ):
+            raise HTTPException(status_code=409, detail="该昵称已被使用")
+
+        old_nickname = user.nickname
+
+        # 先把还没归属的历史成绩认领过来（用旧昵称匹配），再统一按 user_id 改名，
+        # 这样只需处理一次，之后改名就不用再依赖昵称了
+        claim_legacy_scores(session, user)
+        user.nickname = nickname
+        session.execute(
+            update(Score).where(Score.user_id == user.id).values(name=nickname)
+        )
+        session.commit()
+        return to_user_out(user)
+
+
+@app.post("/api/auth/password", status_code=204)
+def change_password(
+    payload: ChangePasswordIn,
+    authorization: str | None = Header(default=None),
+) -> None:
+    """修改密码。
+
+    必须验证旧密码：这一步相当于二次确认，别人拿到你一台已解锁的设备也不能直接
+    把密码改掉。
+
+    改完之后只保留当前会话，其余登录一律失效——旧密码可能已经在别处泄露，
+    不能让它换来的会话继续可用。
+    """
+    if not payload.new_password.strip():
+        # 空格也算字符，只按长度校验会让整串空格的密码通过
+        raise HTTPException(status_code=422, detail="新密码不能全是空格")
+
+    with SessionLocal() as session:
+        user, current_session = get_current_user(session, authorization)
+
+        if not verify_password(payload.current_password, user.password_hash):
+            raise HTTPException(status_code=401, detail="当前密码不正确")
+
+        user.password_hash = password_digest(payload.new_password)
+        session.execute(
+            delete(AuthSession).where(
+                AuthSession.user_id == user.id,
+                AuthSession.id != current_session.id,
+            )
+        )
+        session.commit()
+
+
+@app.get("/api/auth/sessions", response_model=list[SessionOut])
+def list_sessions(authorization: str | None = Header(default=None)) -> list[SessionOut]:
+    """列出该账号当前有效的登录会话（用于「登录设备」页面）。"""
+    with SessionLocal() as session:
+        user, current = get_current_user(session, authorization)
+
+        rows = session.scalars(
+            select(AuthSession)
+            .where(AuthSession.user_id == user.id, AuthSession.expires_at > utcnow())
+            .order_by(AuthSession.created_at.desc(), AuthSession.id.desc())
+        ).all()
+
+        return [
+            SessionOut(
+                id=row.id,
+                created_at=row.created_at,
+                expires_at=row.expires_at,
+                current=row.id == current.id,
+                user_agent=row.user_agent,
+                ip_address=row.ip_address,
+            )
+            for row in rows
+        ]
+
+
+@app.delete("/api/auth/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: int,
+    authorization: str | None = Header(default=None),
+) -> None:
+    """退出指定的登录设备。
+
+    只能删自己的会话；当前正在使用的这条不允许删——要退当前设备应当走登出接口，
+    否则用户会卡在"显示已退出、实际仍能操作"的迷惑状态里。
+    """
+    with SessionLocal() as session:
+        user, current = get_current_user(session, authorization)
+
+        target = session.get(AuthSession, session_id)
+        if not target or target.user_id != user.id:
+            # 不区分"不存在"和"不属于你"，避免被用来探测别人的会话 id
+            raise HTTPException(status_code=404, detail="该登录设备不存在")
+        if target.id == current.id:
+            raise HTTPException(status_code=422, detail="不能退出当前正在使用的设备")
+
+        session.delete(target)
+        session.commit()
 
 
 def reset_request_response(code: str | None = None) -> dict:
@@ -832,6 +1047,7 @@ def submit_score(
         check_score_consistency(payload)
         session.add(
             Score(
+                user_id=user.id,
                 name=user.nickname,
                 difficulty=payload.difficulty,
                 score=payload.score,
@@ -852,6 +1068,58 @@ def submit_score(
         )
 
     return {"ok": True, "rank": (better or 0) + 1}
+
+
+@app.get("/api/scores/mine", response_model=MyStatsOut)
+def my_scores(
+    authorization: str | None = Header(default=None),
+    limit: int = 20,
+) -> MyStatsOut:
+    """当前账号的战绩：各难度最佳分、总场次，以及最近几局。"""
+    limit = max(1, min(limit, 50))
+
+    with SessionLocal() as session:
+        user, _ = get_current_user(session, authorization)
+
+        # 顺手认领加列之前提交的历史成绩，否则老玩家的「我的战绩」会一直是空的
+        if claim_legacy_scores(session, user):
+            session.commit()
+
+        total = session.scalar(
+            select(func.count()).select_from(Score).where(Score.user_id == user.id)
+        ) or 0
+
+        best: dict[str, int | None] = {
+            difficulty: session.scalar(
+                select(func.max(Score.score)).where(
+                    Score.user_id == user.id, Score.difficulty == difficulty
+                )
+            )
+            for difficulty in sorted(DIFFICULTIES)
+        }
+
+        recent = session.scalars(
+            select(Score)
+            .where(Score.user_id == user.id)
+            .order_by(Score.created_at.desc(), Score.id.desc())
+            .limit(limit)
+        ).all()
+
+        return MyStatsOut(
+            best=best,
+            total_games=total,
+            recent=[
+                MyScoreOut(
+                    difficulty=row.difficulty,
+                    score=row.score,
+                    food_eaten=row.food_eaten,
+                    moves=row.moves,
+                    duration_seconds=row.duration_seconds,
+                    created_at=row.created_at,
+                )
+                for row in recent
+            ],
+        )
 
 
 @app.get("/api/leaderboard/{difficulty}", response_model=list[ScoreOut])

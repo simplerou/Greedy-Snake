@@ -15,6 +15,15 @@ class Score(Base):
     __table_args__ = (Index("ix_scores_difficulty_score", "difficulty", "score"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 成绩归属的账号。历史数据（本列加入之前提交的）为空，改名时会被认领。
+    # 榜单仍按 name 显示，所以这个外键只用于「我的战绩」与改名时的归属迁移，
+    # 不参与排行榜查询。
+    #
+    # 注意：老库由 _add_missing_columns 补列，只会加上可空列、不会带上外键约束，
+    # 因此新旧库在这一点上不完全一致；归属正确性由应用层保证。
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(32))                  # 玩家昵称
     difficulty: Mapped[str] = mapped_column(String(10))            # easy / medium / hard
     score: Mapped[int] = mapped_column(Integer)                    # 得分
@@ -55,6 +64,10 @@ class AuthSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 登录时的设备信息，只用于「登录设备」页面展示，方便玩家辨认是不是自己的设备。
+    # 这两列加入之前创建的会话为空，页面上按「未知设备」显示。
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # 兼容 IPv6
 
 
 class PasswordReset(Base):
