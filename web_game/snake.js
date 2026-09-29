@@ -16,6 +16,7 @@ const userAvatarLetterElement = document.getElementById("userAvatarLetter");
 const leaderboardListElement = document.getElementById("leaderboardList");
 const resultOverlayElement = document.getElementById("resultOverlay");
 const resultScoreElement = document.getElementById("resultScore");
+const resultRecordElement = document.getElementById("resultRecord");
 const resultRankElement = document.getElementById("resultRank");
 const resultSyncElement = document.getElementById("resultSync");
 const resultSyncTextElement = document.getElementById("resultSyncText");
@@ -173,6 +174,9 @@ let maxSpeedLevel = 1;
 let obstacleMoveNotice = 0;
 let speed = DIFFICULTIES[difficulty].startSpeed;
 let bestScore = 0;
+/* 本局开始前的历史最佳。bestScore 会随着进食实时更新，到结算时它已经等于
+ * 本局得分了，光看它判断不出有没有破纪录，所以另存一份开局时的值。 */
+let bestScoreAtStart = 0;
 let currentPlayerName = "匿名玩家";
 let leaderboards = loadLeaderboards();
 let timerInterval = null;
@@ -486,6 +490,7 @@ function resetGame() {
     obstacleMoveNotice = 0;
     speed = settings.startSpeed;
     bestScore = getBestScore(difficulty);
+    bestScoreAtStart = bestScore;
 
     scoreElement.textContent = "0";
     bestElement.textContent = String(bestScore);
@@ -654,6 +659,7 @@ function finishGame() {
 
     const result = recordScore();
     resultScoreElement.textContent = String(score);
+    showRecordBadge();
 
     if (!result) {
         resultRankElement.textContent = "再吃到一颗食物，就能留下榜单成绩。";
@@ -666,6 +672,23 @@ function finishGame() {
 
     resultOverlayElement.hidden = false;
     playAgainElement.focus();
+}
+
+/* 破个人纪录时在结算面板上给一句提示。
+ *
+ * 比的基准是"本局开始前"的最佳分（bestScoreAtStart），不是当前的 bestScore——
+ * 后者在吃下食物的那一刻就被顶上去了（见 update 里那段），到结算时它已经等于
+ * 本局得分，拿它来比永远不成立。 */
+function showRecordBadge() {
+    if (score <= bestScoreAtStart) {
+        resultRecordElement.hidden = true;
+        return;
+    }
+
+    resultRecordElement.textContent = bestScoreAtStart > 0
+        ? `新纪录！比之前的 ${bestScoreAtStart} 分高出 ${score - bestScoreAtStart} 分`
+        : "新纪录！这是你在本难度的第一份成绩";
+    resultRecordElement.hidden = false;
 }
 
 function changeDirection(newDirection) {

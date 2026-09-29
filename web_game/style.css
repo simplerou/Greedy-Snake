@@ -852,6 +852,15 @@ canvas{
     font-size:56px;
 }
 
+/* 破个人纪录时的提示。原先 BEST 只是顶部那个数字悄悄变了，打完一局玩家根本
+ * 不知道自己刚破了自己的记录。 */
+.resultRecord{
+    margin:0 0 6px;
+    color:var(--green);
+    font-size:13px;
+    font-weight:700;
+}
+
 .resultRank{
     min-height:22px;
     margin:17px 0;
