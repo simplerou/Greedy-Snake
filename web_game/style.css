@@ -781,18 +781,29 @@ kbd{
     }
 }
 
+/* 画布的尺寸交给容器定，canvas 只负责铺满。
+ *
+ * 高度约束换算成宽度写进 min()：画面比例固定 5:4，所以 82vh 的高对应 82vh × 1.25 的宽。
+ *
+ * 之所以不把尺寸写在 canvas 上：JS 要按"实际显示尺寸 × 设备像素比"去设置它的
+ * width/height 属性，而这两个属性又反过来决定它的固有显示尺寸，写在一起就是循环依赖。
+ * 分开之后 CSS 管布局、JS 只管像素密度。
+ *
+ * 边框和阴影也放在容器上：canvas 自己的 border 会让 getBoundingClientRect 多出 2px，
+ * 而 JS 正是靠这个值换算像素尺寸。 */
 #gameBox{
-    width:100vw;
-    display:flex;
-    justify-content:center;
+    width:min(95vw, calc(82vh * 1.25));
+    margin:0 auto;
+    aspect-ratio:5 / 4;
+    border:1px solid #49554d;
+    box-shadow:0 25px 80px rgba(0,0,0,.5);
 }
 
 canvas{
-    max-width:95vw;
-    max-height:82vh;
-    border:1px solid #49554d;
+    display:block;
+    width:100%;
+    height:100%;
     background:#020403;
-    box-shadow:0 25px 80px rgba(0,0,0,.5);
     touch-action:none;
 }
 
@@ -850,6 +861,51 @@ canvas{
 
 .resultRank strong{
     color:var(--yellow);
+}
+
+/* 成绩上传到云端的结果。原先上传失败是完全静默的——网络抖动、后端 503、
+ * 或者被服务端校验拒绝，用户在界面上都看不出任何区别，只会觉得"榜单坏了"。 */
+.resultSync{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:10px;
+    margin:0 0 14px;
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.5;
+}
+
+.resultSync[data-tone="ok"]{
+    color:var(--green);
+}
+
+.resultSync[data-tone="warn"]{
+    color:var(--yellow);
+}
+
+.resultSync button{
+    padding:5px 12px;
+    border:1px solid var(--line-bright);
+    background:var(--panel-raised);
+    color:var(--text);
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    transition:border-color .16s ease, color .16s ease;
+}
+
+.resultSync button:hover,
+.resultSync button:focus-visible{
+    border-color:var(--green);
+    color:var(--green);
+    outline:none;
+}
+
+.resultSync button:disabled{
+    opacity:.55;
+    cursor:progress;
 }
 
 .resultActions{
@@ -1082,10 +1138,9 @@ canvas{
         font-size:18px;
     }
 
-    canvas{
-        width:min(95vw, 500px);
-        height:auto;
-        max-height:57vh;
+    /* 手机上高度更紧张，把 57vh 这条上限也换算成宽度约束写进来 */
+    #gameBox{
+        width:min(95vw, 500px, calc(57vh * 1.25));
     }
 
     .desktopTip{

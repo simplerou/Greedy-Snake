@@ -17,6 +17,9 @@ const leaderboardListElement = document.getElementById("leaderboardList");
 const resultOverlayElement = document.getElementById("resultOverlay");
 const resultScoreElement = document.getElementById("resultScore");
 const resultRankElement = document.getElementById("resultRank");
+const resultSyncElement = document.getElementById("resultSync");
+const resultSyncTextElement = document.getElementById("resultSyncText");
+const retrySubmitButton = document.getElementById("retrySubmit");
 const playAgainElement = document.getElementById("playAgain");
 const viewLeaderboardElement = document.getElementById("viewLeaderboard");
 const resultToMenuElement = document.getElementById("resultToMenu");
@@ -173,6 +176,7 @@ let bestScore = 0;
 let currentPlayerName = "匿名玩家";
 let leaderboards = loadLeaderboards();
 let timerInterval = null;
+let pausedAt = 0;                 // 进入暂停的时刻；恢复时把这段时长从计时起点里扣掉
 let leaderboardScope = "local";   // "local" = 本机榜单，"global" = 全球榜单
 let globalCache = {};             // 按难度缓存全球榜单数据
 
@@ -290,7 +294,16 @@ function recordScore() {
     persistLeaderboards();
     renderLeaderboard();
 
-    submitScoreToCloud(entry);
+    // 传的是一份快照：上传是异步的，而且失败后还能在结算面板上重试，
+    // 那时这局早已结束、现场变量已经变了
+    submitScoreToCloud({
+        name: entry.name,
+        difficulty,
+        score: entry.score,
+        duration_seconds: Math.round(getGameDuration() / 1000),
+        food_eaten: foodEaten,
+        moves: moveCount
+    });
 
     return { rank, placed };
 }
@@ -301,6 +314,11 @@ function formatScore(value) {
 
 /* ── 全球排行榜 API ─────────────────────────────── */
 
+/* 返回 { ok, status }；status 为 0 表示请求压根没发出去（断网、后端没起）。
+ *
+ * 特意保留状态码而不是一律 null：401 要重新登录、422 是服务端校验拒绝、
+ * 5xx 是后端故障——这几种情况该对用户说的话不一样，混在一起就只能说"失败了"。
+ */
 async function apiSubmitScore(payload) {
     try {
         const res = await fetch(`${API_BASE}/api/scores`, {
@@ -311,9 +329,9 @@ async function apiSubmitScore(payload) {
             },
             body: JSON.stringify(payload)
         });
-        return res.ok ? await res.json() : null;
+        return { ok: res.ok, status: res.status };
     } catch (error) {
-        return null; // 后端未启动时静默降级为本机榜单
+        return { ok: false, status: 0 };
     }
 }
 
@@ -326,20 +344,45 @@ async function apiFetchLeaderboard(level) {
     }
 }
 
-function submitScoreToCloud(entry) {
-    apiSubmitScore({
-        name: entry.name,
-        difficulty,
-        score: entry.score,
-        duration_seconds: Math.round(getGameDuration() / 1000),
-        food_eaten: foodEaten,
-        moves: moveCount
-    }).then(result => {
-        if (result) {
-            globalCache = {}; // 有新成绩入库，下次查看全球榜单时重新拉取
-            if (leaderboardScope === "global") renderLeaderboard();
-        }
-    });
+/* 上传失败时把这份成绩原样留着，供结算面板上的「重试上传」用。
+ * 留的是快照而不是引用现场变量：重试可能发生在下一局已经开始之后，
+ * 那时的 difficulty / foodEaten / moves 早就不是这一局的了。 */
+let pendingScore = null;
+
+function setSyncStatus(text, tone) {
+    resultSyncTextElement.textContent = text;
+    resultSyncElement.hidden = !text;
+
+    if (tone) resultSyncElement.dataset.tone = tone;
+    else delete resultSyncElement.dataset.tone;
+
+    retrySubmitButton.hidden = !pendingScore;
+}
+
+function describeSyncFailure(status) {
+    if (status === 0) return "没能连上服务器，这局只记在了本机榜上。";
+    if (status === 401) return "登录状态已失效，这局只记在了本机榜上。";
+    if (status === 422) return "这局成绩未通过服务端校验，没有计入全球榜。";
+    if (status === 429) return "提交太频繁，稍等一会儿重试就能上榜。";
+    if (status >= 500) return "服务器暂时不可用，这局只记在了本机榜上。";
+    return "成绩上传失败，这局只记在了本机榜上。";
+}
+
+async function submitScoreToCloud(payload) {
+    pendingScore = payload;
+    setSyncStatus("正在同步到全球榜…");
+
+    const result = await apiSubmitScore(payload);
+
+    if (result.ok) {
+        pendingScore = null;
+        globalCache = {};   // 有新成绩入库，下次查看全球榜单时重新拉取
+        setSyncStatus("已同步到全球榜。", "ok");
+        if (leaderboardScope === "global") renderLeaderboard();
+        return;
+    }
+
+    setSyncStatus(describeSyncFailure(result.status), "warn");
 }
 
 function renderLeaderboardRows(items, emptyTitle, emptyHint) {
@@ -450,6 +493,11 @@ function resetGame() {
     timerElement.textContent = "00:00";
     touchPauseElement.textContent = "暂停";
     resultOverlayElement.hidden = true;
+    pausedAt = 0;
+
+    // 上一局的上传结果与待重试成绩都不再适用
+    pendingScore = null;
+    setSyncStatus("");
 
     // 清除之前的计时器
     if (timerInterval) {
@@ -577,6 +625,8 @@ function startGame(selectedDifficulty) {
     currentDifficultyElement.style.color = settings.color;
     mainMenuElement.hidden = true;
     gameScreenElement.hidden = false;
+    // 得等页面真正显示出来才量得到尺寸，所以必须在取消 hidden 之后
+    fitCanvasToDisplay();
     resetGame();
     canvas.focus();
 }
@@ -635,14 +685,30 @@ function changeDirection(newDirection) {
 
 function togglePause() {
     if (state === "PLAYING") {
-        state = "PAUSE";
-        stopTimer();
-        touchPauseElement.textContent = "继续";
+        pauseGame();
     } else if (state === "PAUSE") {
-        state = "PLAYING";
-        startTimer();
-        touchPauseElement.textContent = "暂停";
+        resumeGame();
     }
+}
+
+function pauseGame() {
+    state = "PAUSE";
+    pausedAt = Date.now();
+    stopTimer();
+    touchPauseElement.textContent = "继续";
+}
+
+function resumeGame() {
+    // 把暂停的这段时长从计时起点里减掉，让 TIME 只统计真正在玩的时间。
+    // 不补偿的话，暂停十分钟再回来会凭空多出十分钟——显示的计时是错的，
+    // 提交给服务端的用时也是错的。
+    if (pausedAt) {
+        gameStartTime += Date.now() - pausedAt;
+        pausedAt = 0;
+    }
+    state = "PLAYING";
+    startTimer();
+    touchPauseElement.textContent = "暂停";
 }
 
 /* ── 计时器 & 统计 ─────────────────────────────── */
@@ -724,10 +790,25 @@ playAgainElement.addEventListener("click", () => {
     canvas.focus();
 });
 
+// 重试上传：把留着的那份成绩重新提交一次，成功与否都会刷新状态文案
+retrySubmitButton.addEventListener("click", async () => {
+    if (!pendingScore) return;
+    retrySubmitButton.disabled = true;
+    try {
+        await submitScoreToCloud(pendingScore);
+    } finally {
+        retrySubmitButton.disabled = false;
+    }
+});
+
 touchPauseElement.addEventListener("click", togglePause);
 touchRestartElement.addEventListener("click", resetGame);
 
 canvas.addEventListener("click", () => canvas.focus());
+
+// 窗口尺寸变了（转屏、拉窗口、挪到另一块显示器）就按新尺寸重算像素，
+// 否则画面会被拉伸或发虚。下一帧 draw() 会重绘，不用额外处理。
+window.addEventListener("resize", fitCanvasToDisplay);
 
 let touchStartX = 0;
 let touchStartY = 0;
@@ -749,6 +830,20 @@ canvas.addEventListener("touchend", event => {
         changeDirection(deltaY > 0 ? "DOWN" : "UP");
     }
 }, { passive: true });
+
+/* 页面被切到后台时自动暂停。
+ *
+ * 不处理会有两个后果：浏览器把后台页面的定时器节流到约一秒一次，蛇于是在同一个
+ * 方向上一格一格地挪、计时器却照涨；而且方向不会自己变，待久了一定撞墙。切回来
+ * 看到的是"莫名其妙就死了"，用户完全不知道中间发生了什么。
+ *
+ * 倒计时那次也要管：它按墙上时钟算，切走几秒再回来会直接跳到 GO!，玩家连开局
+ * 方向都没来得及选，所以重新计一次。 */
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) return;
+    if (state === "PLAYING") pauseGame();
+    else if (state === "COUNTDOWN") countdownStartTime = Date.now();
+});
 
 document.addEventListener("keydown", event => {
     if (gameScreenElement.hidden) return;
@@ -871,7 +966,32 @@ function drawCenteredOverlay(title, subtitle, color = "#ffffff") {
     ctx.fillText(subtitle, WIDTH / 2, HEIGHT / 2 + 50);
 }
 
+/* 按「实际显示尺寸 × 设备像素比」重建画布像素，再用 setTransform 一次性缩放，
+ * 绘制代码里的坐标仍按 1000×800 这套逻辑坐标写，一行都不用改。
+ *
+ * 不这么做的话：MacBook 这类 DPR=2 的屏幕上，canvas 只有 1000 个物理像素，却要铺满
+ * 约 2000 个物理像素的位置，浏览器只能把画面硬拉两倍，糊得很明显。
+ * 反过来在小屏手机上不浪费像素——算的是实际显示尺寸，不是无脑乘 dpr。 */
+function fitCanvasToDisplay() {
+    const rect = canvas.getBoundingClientRect();
+    // 游戏页还没显示时量不到尺寸（rect 全为 0），直接跳过
+    if (!rect.width || !rect.height) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetWidth = Math.round(rect.width * dpr);
+    const targetHeight = Math.round(rect.height * dpr);
+
+    // 尺寸没变就别动：给 canvas.width 赋值会清空画布并重置变换
+    if (canvas.width === targetWidth && canvas.height === targetHeight) return;
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+}
+
 function draw() {
+    // 每帧重设一次变换：canvas 尺寸变化时浏览器会顺手把它重置掉
+    ctx.setTransform(canvas.width / WIDTH, 0, 0, canvas.height / HEIGHT, 0, 0);
+
     ctx.fillStyle = "#020403";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
     drawGrid();
