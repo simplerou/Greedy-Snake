@@ -654,13 +654,47 @@ kbd{
     outline:none;
 }
 
-#currentDifficulty{
+/* 右上角同时放难度和音效开关。用容器包住、间距交给 flex：
+ * 难度文字宽度随难度变化（"低等 · EASY" 比"高等 · HARD"宽），
+ * 两个元素各自绝对定位的话，偏移量只能靠猜。 */
+.gameHeaderRight{
     position:absolute;
     right:22px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+#currentDifficulty{
     color:var(--green);
     font-size:11px;
     font-weight:800;
     letter-spacing:1.2px;
+    white-space:nowrap;
+}
+
+#soundToggle{
+    padding:7px 11px;
+    border:1px solid var(--line-bright);
+    background:#0c120e;
+    color:var(--muted);
+    font-size:11.5px;
+    white-space:nowrap;
+    cursor:pointer;
+    transition:border-color .16s ease, color .16s ease;
+}
+
+#soundToggle:hover,
+#soundToggle:focus-visible{
+    border-color:var(--green);
+    color:var(--green);
+    outline:none;
+}
+
+/* 静音时整体压暗，和"开"一眼能分开 */
+#soundToggle[aria-pressed="true"]{
+    border-color:var(--line);
+    color:var(--dim);
 }
 
 #info{
@@ -1129,8 +1163,15 @@ canvas{
         left:14px;
     }
 
-    #currentDifficulty{
+    /* 窄屏上右边要同时塞下难度和音效开关，把间距和按钮内边距收紧一点 */
+    .gameHeaderRight{
         right:14px;
+        gap:8px;
+    }
+
+    #soundToggle{
+        padding:6px 9px;
+        font-size:11px;
     }
 
     #info{

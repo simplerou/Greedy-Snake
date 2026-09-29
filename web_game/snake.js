@@ -9,6 +9,7 @@ const mainMenuElement = document.getElementById("mainMenu");
 const gameScreenElement = document.getElementById("gameScreen");
 const currentDifficultyElement = document.getElementById("currentDifficulty");
 const backToMenuElement = document.getElementById("backToMenu");
+const soundToggleElement = document.getElementById("soundToggle");
 const currentUserNameElement = document.getElementById("currentUserName");
 const userAvatarElement = document.getElementById("userAvatar");
 const userAvatarImageElement = document.getElementById("userAvatarImage");
@@ -161,6 +162,9 @@ let difficulty = "easy";
 let leaderboardDifficulty = "easy";
 let state = "MENU";
 let countdownStartTime = 0;
+/* 倒计时当前处在第几阶段（0=3、1=2、2=1、3=GO!）。用来判断该不该响那一声，
+ * 因为 update 每帧都会跑，不能每帧都播。 */
+let countdownStage = -1;
 let gameStartTime = 0;
 let snake = [];
 let food = {};
@@ -315,6 +319,145 @@ function recordScore() {
 function formatScore(value) {
     return String(value).padStart(4, "0");
 }
+
+/* ── 音效 ─────────────────────────────────────────────── */
+
+/* 全部用 Web Audio 现场合成，不引入任何音频文件：零加载、零体积，
+ * 也不会多出几个需要维护和缓存治理的静态资源。
+ *
+ * 波形统一用三角波——方波、锯齿波太刺耳，正弦又太软，三角波介于中间。 */
+
+const SOUND_MUTED_KEY = "greedySnakeSoundMuted";
+const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+let audioContext = null;
+let soundMuted = readSoundMuted();
+
+function readSoundMuted() {
+    try {
+        return localStorage.getItem(SOUND_MUTED_KEY) === "1";
+    } catch (error) {
+        return false;   // 隐私模式下取不到，按"有声"处理
+    }
+}
+
+function getAudioContext() {
+    if (!audioContext) audioContext = new AudioContextClass();
+    // 浏览器要求先有用户交互才允许出声，这里恢复一次
+    if (audioContext.state === "suspended") audioContext.resume();
+    return audioContext;
+}
+
+/* 在用户点击的同步上下文里先把 AudioContext 建好。
+ * 自动播放策略要求音频上下文由用户手势创建，等到 setTimeout 里（倒计时的
+ * 第一声）才建的话，那一声可能会被丢掉。 */
+function warmUpAudio() {
+    if (soundMuted || !AudioContextClass) return;
+    try {
+        getAudioContext();
+    } catch (error) {
+        // 建不起来就算了，后面 playTone 还会再试
+    }
+}
+
+/* 放一个音。from → to 是频率滑音（相等就不滑），duration 内做指数衰减。
+ *
+ * 包络用指数而非线性，听感上更接近自然衰减；但指数曲线不能降到 0，
+ * 所以末端给一个足够小的值。 */
+function playTone({ from, to = from, duration, volume, delay = 0 }) {
+    if (soundMuted || !AudioContextClass) return;
+
+    try {
+        const ctx = getAudioContext();
+        const startAt = ctx.currentTime + delay;
+
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscillator.type = "triangle";
+        oscillator.frequency.setValueAtTime(from, startAt);
+        if (to !== from) {
+            oscillator.frequency.exponentialRampToValueAtTime(to, startAt + duration);
+        }
+
+        gain.gain.setValueAtTime(volume, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+        oscillator.connect(gain).connect(ctx.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + duration + 0.02);
+    } catch (error) {
+        // 音频出问题不该影响游戏本身
+    }
+}
+
+const sounds = {
+    /* 吃到食物：短促上扬的"叮" */
+    eat() {
+        playTone({ from: 880, to: 1320, duration: 0.09, volume: 0.16 });
+    },
+
+    /* 撞墙结束：下滑的低音，有"掉下去"的感觉 */
+    gameover() {
+        playTone({ from: 440, to: 110, duration: 0.45, volume: 0.15 });
+    },
+
+    /* 破个人纪录：四音上行琶音。
+     * 延后 0.5 秒起——撞墙那段下滑音有 450ms，不岔开的话两段会糊在一起。
+     * 先"掉下去"再"升上来"，顺序上也正好对应结算面板的呈现。 */
+    record() {
+        const start = 0.5;
+        [523.25, 659.25, 783.99, 1046.50].forEach((frequency, index) => {
+            playTone({
+                from: frequency,
+                duration: 0.12,
+                volume: 0.15,
+                delay: start + index * 0.09,
+            });
+        });
+    },
+
+    /* 倒计时：step 0/1/2 对应 3/2/1，3 是 GO!
+     *
+     * 音高逐级升高（E5 → G#5 → B5 → E6）：固定音高的话三声一模一样，
+     * 不看屏幕根本分不出还差几步。每一跳都在三个半音以上，短音里也听得出差别。
+     * GO! 单独给得更长更响——它是"起跑"信号，跟前面三声"准备"的语气本就不同。 */
+    countdown(step) {
+        const ladder = [
+            { from: 659.25, duration: 0.07, volume: 0.13 },    // 3 · E5
+            { from: 830.61, duration: 0.07, volume: 0.14 },    // 2 · G#5
+            { from: 987.77, duration: 0.07, volume: 0.15 },    // 1 · B5
+            { from: 1318.51, duration: 0.13, volume: 0.16 },   // GO! · E6
+        ];
+        const note = ladder[Math.min(step, ladder.length - 1)];
+        if (note) playTone(note);
+    },
+
+    /* 切换静音开关时的反馈音，让用户立刻确认声音生效了没有 */
+    uiClick() {
+        playTone({ from: 880, duration: 0.08, volume: 0.14 });
+    },
+};
+
+function applySoundToggle() {
+    soundToggleElement.textContent = soundMuted ? "音效 关" : "音效 开";
+    soundToggleElement.setAttribute("aria-pressed", String(soundMuted));
+    soundToggleElement.title = soundMuted ? "点击开启音效" : "点击关闭音效";
+}
+
+soundToggleElement.addEventListener("click", () => {
+    soundMuted = !soundMuted;
+    try {
+        localStorage.setItem(SOUND_MUTED_KEY, soundMuted ? "1" : "0");
+    } catch (error) {
+        // 存不下也无妨，本次会话内仍然有效
+    }
+    applySoundToggle();
+    // 重新打开时响一声作为确认；关闭时本来就该安静，不用响
+    if (!soundMuted) sounds.uiClick();
+});
+
+applySoundToggle();
 
 /* ── 全球排行榜 API ─────────────────────────────── */
 
@@ -514,6 +657,7 @@ function resetGame() {
     obstacles = createObstacles();
     food = createFood();
     countdownStartTime = Date.now();
+    countdownStage = -1;   // 新的一局，倒计时从头响
     state = "COUNTDOWN";
 }
 
@@ -632,6 +776,8 @@ function startGame(selectedDifficulty) {
     gameScreenElement.hidden = false;
     // 得等页面真正显示出来才量得到尺寸，所以必须在取消 hidden 之后
     fitCanvasToDisplay();
+    // 紧接着这一次点击，把音频上下文也建起来（见 warmUpAudio 的说明）
+    warmUpAudio();
     resetGame();
     canvas.focus();
 }
@@ -649,6 +795,7 @@ function finishGame() {
 
     state = "GAMEOVER";
     stopTimer();
+    sounds.gameover();
 
     // 更新最终计时
     const duration = getGameDuration();
@@ -689,6 +836,8 @@ function showRecordBadge() {
         ? `新纪录！比之前的 ${bestScoreAtStart} 分高出 ${score - bestScoreAtStart} 分`
         : "新纪录！这是你在本难度的第一份成绩";
     resultRecordElement.hidden = false;
+    // 这段琶音自带 0.5 秒延迟，会等撞墙那声下滑音走完再起
+    sounds.record();
 }
 
 function changeDirection(newDirection) {
@@ -865,7 +1014,10 @@ canvas.addEventListener("touchend", event => {
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden) return;
     if (state === "PLAYING") pauseGame();
-    else if (state === "COUNTDOWN") countdownStartTime = Date.now();
+    else if (state === "COUNTDOWN") {
+        countdownStartTime = Date.now();
+        countdownStage = -1;   // 回来以后重新从"3"响一遍
+    }
 });
 
 document.addEventListener("keydown", event => {
@@ -907,7 +1059,15 @@ function update() {
             state = "PLAYING";
             gameStartTime = Date.now();
             startTimer();
+            sounds.countdown(3);   // GO!
         } else {
+            /* 阶段切换时各响一声。用 update 驱动，而不是开局时把四个音按 delay
+             * 一次排好：切后台会把倒计时重置，排好的音就跟画面对不上了。 */
+            const stage = Math.floor((Date.now() - countdownStartTime) / 1000);
+            if (stage !== countdownStage) {
+                countdownStage = stage;
+                sounds.countdown(stage);
+            }
             return;
         }
     }
@@ -929,6 +1089,7 @@ function update() {
         foodEaten += 1;
         scoreElement.textContent = String(score);
         updateSpeed();
+        sounds.eat();
 
         if (score > bestScore) {
             bestScore = score;
